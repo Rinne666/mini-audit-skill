@@ -1,0 +1,13 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Build / scratch
+/build/
+/dist/
+*.log
+
+# Local override
+_meta.local.json
