@@ -1,0 +1,21 @@
+{
+  "id": "EVAL-NEG-008",
+  "name": "Hypothetical chain: needs 3 conditions to fire, none reproducible",
+  "class": "race_condition",
+  "input": {
+    "id": "F-108",
+    "verdict": "needs_validation",
+    "class": "race_condition",
+    "title": "Possible race condition between two background jobs",
+    "summary": "Two cron jobs (rotate_keys, sync_users) allegedly can race. They run on different schedules and one takes a distributed lock the other doesn't even try to acquire.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "n/a", "existing_authority": "n/a"},
+    "trace": [
+      {"kind": "race_window", "file": "src/jobs/rotate_keys.py", "line": 10, "symbol": "rotate"}
+    ],
+    "root_cause": "Hypothetical — no observable race in production or staging"
+  },
+  "expected_verdict": "rejected",
+  "expected_disposition_reason": "hypothetical_chain",
+  "rationale": "Three conditions must hold simultaneously. None reproducible. disposition_reason=hypothetical_chain."
+}

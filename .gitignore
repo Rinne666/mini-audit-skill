@@ -9,5 +9,25 @@ Thumbs.db
 /dist/
 *.log
 
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Local override
 _meta.local.json
+
+# Runtime artifacts (audit runs produce these; never commit them)
+mini-audit/audit-state.json
+mini-audit/findings.json
+mini-audit/coverage-ledger.json
+mini-audit/candidates/
+mini-audit/scanner/capabilities.json
+mini-audit/sandbox/probe.json
+mini-audit/agents/
+mini-audit/tmp/
+mini-audit/diff-scope.json
+mini-audit/reports/

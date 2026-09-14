@@ -1,0 +1,23 @@
+{
+  "id": "EVAL-POS-010",
+  "name": "State machine violation in subscription upgrade flow",
+  "class": "state_machine",
+  "input": {
+    "id": "F-010",
+    "verdict": "needs_validation",
+    "class": "state_machine",
+    "title": "User can skip 'payment_required' state by replaying old upgrade request",
+    "summary": "POST /subscription/upgrade transitions: pending → payment_required → active. Replaying a captured 'pending' state request after subscription is cancelled transitions the user to active without payment.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "authenticated user with previously cancelled subscription", "existing_authority": "initiate upgrade"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/subscription/upgrade.py", "line": 22, "symbol": "upgrade"},
+      {"kind": "sink", "file": "src/subscription/state_machine.py", "line": 70, "symbol": "transition_to"}
+    ],
+    "root_cause": "transition_to does not validate current state accepts upgrade event from this caller"
+  },
+  "expected_verdict": "confirmed",
+  "expected_disposition_reason": null,
+  "expected_min_severity": "high",
+  "rationale": "Spec §39 hard bug recall target: state machine bug. Reproduced with saved request replay."
+}

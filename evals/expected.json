@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "description": "Aggregated expected verdicts across the eval corpus (Spec §38).",
+  "totals": {
+    "positive": 10,
+    "negative": 15,
+    "ambiguous": 5,
+    "total": 30
+  },
+  "verdict_distribution": {
+    "confirmed": 10,
+    "rejected": 15,
+    "needs_validation": 5
+  },
+  "disposition_distribution": {
+    "equivalent_capability": 1,
+    "by_design": 1,
+    "post_compromise": 1,
+    "hypothetical_chain": 2,
+    "hardening_only": 3,
+    "fix_as_proof": 1,
+    "keyword_cvss": 1,
+    "admin_action_required": 1,
+    "speculative_client_behavior": 1,
+    "duplicate": 1,
+    "invented_permission": 1,
+    "out_of_scope": 1
+  },
+  "severity_distribution": {
+    "critical": 4,
+    "high": 6,
+    "medium": 0,
+    "low": 0
+  },
+  "expected_metrics": {
+    "true_positive_at_min_severity_high": 10,
+    "false_positive_rate_target_max_pct": 5,
+    "needs_validation_rate_target_max_pct": 20,
+    "hard_bug_recall_target_min": 1,
+    "hard_bug_classes_covered": [
+      "idor",
+      "broken_authentication",
+      "ssrf",
+      "sql_injection",
+      "race_condition",
+      "business_logic",
+      "csrf",
+      "rce",
+      "open_redirect",
+      "state_machine"
+    ]
+  },
+  "fixtures": [
+    "positive/eval-pos-001-idor.json",
+    "positive/eval-pos-002-auth-bypass.json",
+    "positive/eval-pos-003-ssrf.json",
+    "positive/eval-pos-004-sqli.json",
+    "positive/eval-pos-005-race.json",
+    "positive/eval-pos-006-business-logic.json",
+    "positive/eval-pos-007-multi-step.json",
+    "positive/eval-pos-008-csrf.json",
+    "positive/eval-pos-009-rce.json",
+    "positive/eval-pos-010-state-machine.json",
+    "negative/eval-neg-001-equivalent-capability.json",
+    "negative/eval-neg-002-by-design.json",
+    "negative/eval-neg-003-post-compromise.json",
+    "negative/eval-neg-004-orm-param.json",
+    "negative/eval-neg-005-disabled-feature.json",
+    "negative/eval-neg-006-fix-as-proof.json",
+    "negative/eval-neg-007-keyword-cvss.json",
+    "negative/eval-neg-008-hypothetical-chain.json",
+    "negative/eval-neg-009-default-state-confusion.json",
+    "negative/eval-neg-010-speculative-client.json",
+    "negative/eval-neg-011-duplicate.json",
+    "negative/eval-neg-012-invented-permission.json",
+    "negative/eval-neg-013-out-of-scope.json",
+    "negative/eval-neg-014-spec-compliant-weak.json",
+    "negative/eval-neg-015-legacy-security-default.json",
+    "ambiguous/eval-amb-001-sandbox-required.json",
+    "ambiguous/eval-amb-002-reverse-proxy.json",
+    "ambiguous/eval-amb-003-third-party-waf.json",
+    "ambiguous/eval-amb-004-time-of-check.json",
+    "ambiguous/eval-amb-005-cors.json"
+  ]
+}

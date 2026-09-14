@@ -19,6 +19,178 @@ allowed-tools:
 
 A port of the Piolium security-audit pipeline (originally a Pi coding-agent extension) to MiniMax Code's skill + sub-agent harness. The Piolium phase catalog is preserved verbatim — phase IDs are a stable on-disk contract and must not be renamed.
 
+## Runtime Hardening v1 — deterministic layer
+
+This skill ships a three-layer architecture: **Reasoning** (LLM agents), **Policy** (permission-delta + verification methodology), and **Deterministic** (Python runtime at `runtime/`). The deterministic layer owns state, schema, gates, fingerprinting, coverage, scheduling, and export. LLM "I'm done" never advances phase state on its own — the runtime validates the expected artifacts, parses them, schema-validates them, and only then permits a state transition.
+
+The skill loads the runtime as a Python package at `<skill>/runtime/` and exposes it via `scripts/mini-audit-runtime`.
+
+```
+LLM 负责:
+  reasoning, code understanding, hypothesis generation,
+  tracing, adversarial review, remediation reasoning
+
+Runtime 负责:
+  state, scheduling, retries, timeouts, schema, gates,
+  artifact validation, fingerprinting, deduplication,
+  coverage accounting, tool execution, export
+```
+
+### Layers
+
+| Layer | Lives in | Authoritative for |
+|-------|----------|-------------------|
+| Reasoning | `references/<role>.md` (Piolium inlined), `sub-agent prompts` | hypothesis, debate, trace |
+| Policy | `references/methodology/permission-delta-judging.md` | boundary crossing, severity, verdict |
+| Deterministic | `runtime/` (Python 3.9+, stdlib) | state, schema, gates, fingerprint, coverage, scheduler, export, scan→candidate normalization, diff scope |
+
+### Canonical artifacts (owned by the runtime)
+
+| File | Owner | Purpose |
+|------|-------|---------|
+| `mini-audit/audit-state.json` | runtime | single source of truth for run state (Spec §5) |
+| `mini-audit/findings.json` | runtime | canonical findings (Spec §10, §11) |
+| `mini-audit/coverage-ledger.json` | runtime | subsystem × boundary × class coverage (Spec §20) |
+| `mini-audit/candidates/<source>-candidates.json` | runtime | normalized SARIF candidate records (Spec §28) |
+| `mini-audit/scanner/capabilities.json` | `scripts/detect-tools.sh` | what scanners/sandbox are available (Spec §27) |
+| `mini-audit/sandbox/probe.json` | `scripts/sandbox-check.sh` | sandbox pre-flight (Spec §25) |
+| `mini-audit/agents/<id>/task.json` | runtime | per-lease metadata (Spec §23) |
+| `mini-audit/agents/<id>/result.json` | runtime | per-lease result |
+
+Sub-agents write only to `mini-audit/agents/<id>/scratch/`. Promotion into canonical artifacts happens via runtime CLI after gate validation.
+
+### Runtime CLI contract (Spec §7)
+
+```bash
+mini-audit-runtime state init --repo-root <path> [--mode balanced]
+mini-audit-runtime state show
+mini-audit-runtime phase {start|complete|fail|skip} <PHASE> [--error "..."]
+mini-audit-runtime gate <PHASE> [--workdir DIR]
+mini-audit-runtime finding validate <file>
+mini-audit-runtime finding upsert <file>
+mini-audit-runtime coverage {init <plan>|validate}
+mini-audit-runtime export --format {json|md|sarif} [--verdict V] [--min-severity S] [--class C] [--since ISO] [--output PATH]
+mini-audit-runtime source {capture|diff} --repo-root <path>
+mini-audit-runtime sarif normalize <file> --source <scanner>
+mini-audit-runtime diff scope --repo-root <path> --baseline <sha> --target <sha> [--symbol X ...]
+mini-audit-runtime lease run <task> [--phase P] [--timeout N] [--max-attempts N]
+```
+
+The launcher resolves the runtime package via three strategies: `MINI_AUDIT_RUNTIME_HOME` env → `$MAVIS_SKILLS_DIR/mini-audit` → relative to the script.
+
+### Phase gates are now declarative (Spec §9)
+
+Default gate library (in `runtime.gates.DEFAULT_PHASE_GATES`):
+
+| Phase | Required artifact(s) | Semantic checks |
+|-------|---------------------|-----------------|
+| L1 | `attack-surface/intent-corpus.json` | non_empty |
+| L2 | `context/knowledge-base.md` | — |
+| L3 | `scanner/capabilities.json` | — |
+| L4 | `env/runtime-summary.json` | — |
+| L5 | glob `probe-workspace/*/probe-summary.md` | — |
+| L6 | glob `chamber-workspace/*/debate.json` | every_chamber_closed, every_valid_candidate_has_boundary_sentence |
+| L6b | glob `findings-draft/*/draft.md` | — |
+| L6c | glob `findings/*/poc.sh` + `findings/*/evidence/exploit.log` | — |
+| L7 | `findings.json`, `final-audit-report.md`, `coverage-ledger.json` | every_confirmed_has_verifier, coverage_no_planned, audit_state_terminal_phases |
+
+Forbidden pattern: `file exists → complete`. A real gate checks existence, size, parseability, schema, semantic consistency, source reference validity.
+
+### Stable fingerprint (Spec §12)
+
+Finding IDs are unstable. `compute_fingerprint(finding)` derives a SHA-256 from normalized inputs:
+
+```
+fingerprint = sha256("v1|" + vuln_class + "|" + invariant + "|" + root_cause + "|" + source_symbol + "|" + sink_symbol + "|" + boundary_type)
+```
+
+Inputs forbidden: line number, finding ID, report wording, severity, timestamp.
+
+Two findings with the same content produce the same fingerprint across revisit/reuse/variant. `FindingStore.upsert()` dedupes by fingerprint.
+
+### Review Chamber → Verifier → Permission-Delta (Spec §13, §15, §17)
+
+Three-step promotion, not one-step "Review Chamber says VALID":
+
+1. **Review Chamber** produces a `candidate` (NOT a finding) with a `promotion_recommendation` of `PROMOTE_FOR_VERIFICATION | REJECT | DEFER`.
+2. **Technical Verifier** (fresh session) emits `technically_valid | rejected | needs_validation` based on entrypoint真实性, attacker control, dataflow, authn/authz, sanitization, framework protection, exploitability.
+3. **Permission-Delta Judge** applies the methodology (`references/methodology/permission-delta-judging.md`) for the boundary sentence: *An actor who could previously only X can now Y, which the product's intended security model did not permit.* If the sentence cannot be filled, `cannot confirm`.
+
+Severity policy (Spec §19): no more `pre-auth → severity +1`. Inputs are attacker prerequisites, exploit complexity, privilege level, user interaction, demonstrated impact, blast radius, repeatability. Hard invariant: `overall severity ≤ demonstrated impact`.
+
+### Coverage accounting (Spec §20)
+
+Coverage unit = `subsystem × boundary × attack_class`. States: `planned → in_progress → covered | candidate | blocked | deferred | out_of_scope`. Every hunter task binds to a unit. The audit cannot reach `complete` while any unit is `planned` or `in_progress`. Reports never claim "full coverage" — they print the histogram.
+
+### Default Security Invariant (Spec §18)
+
+For config-based findings, the runtime distinguishes:
+
+```json
+{
+  "default_security": {
+    "fresh_install_value": "...",
+    "security_sensitive": true,
+    "admin_action_required": false,
+    "deployment_override_detected": false
+  }
+}
+```
+
+`admin explicitly enables dangerous feature` ≠ `fresh default installation starts fail-open`. The former is `ADMIN_MISCONFIGURATION`; the latter is a confirmed finding.
+
+### Verdict model (Spec §10.2)
+
+Top-level: `confirmed | needs_validation | rejected`. The 13 permission-delta reasons (`by_design, equivalent_capability, post_compromise, invented_permission, keyword_cvss, hypothetical_chain, default_state_confusion, speculative_client_behavior, fix_as_proof, insufficient_evidence, hardening_only, duplicate, out_of_scope`) live under `disposition_reason`.
+
+### Scanner integration (Spec §26–28)
+
+Scanners (Semgrep, CodeQL, Gitleaks, TruffleHog) produce SARIF. `runtime/sarif.normalize_sarif` converts SARIF 2.1.0 into candidate records. Scanner alerts are **never** directly confirmed findings; they are `untriaged` candidates that the LLM (or a deterministic triager) must evaluate.
+
+### Sandbox policy (Spec §25)
+
+`scripts/sandbox-check.sh` probes for sandbox availability, external network isolation, scratch writability, timeout binary, resource limits. Missing critical capabilities → `execution_status = blocked`, `verdict = needs_validation`. The runtime refuses to fall back to direct host bash execution.
+
+### Export (Spec §34)
+
+```bash
+mini-audit-runtime export --format json      # canonical structured
+mini-audit-runtime export --format md        # generated markdown report
+mini-audit-runtime export --format sarif     # SARIF 2.1.0 for GitHub Code Scanning / DefectDojo
+```
+
+Filters: `--verdict`, `--min-severity`, `--class`, `--since`.
+
+### Reference provenance (Spec §35, §36)
+
+Every reference file under `references/` is listed in `references/MANIFEST.json` with sha256. `scripts/check-manifest.py --strict` validates that:
+
+* all reference files are manifested
+* no manifest entries point to missing files
+* SHA-256 of on-disk files matches the manifest
+* `_hunt-class-map.md` references resolve to existing files
+* README counts match the manifest
+
+CI runs `check-manifest.py --strict` so reference drift is caught.
+
+### Unit tests + evals
+
+```bash
+python -m pytest tests/unit -q        # 125 unit tests for runtime
+python scripts/check-manifest.py --strict
+```
+
+Eval corpus under `evals/{positive,negative,ambiguous,}` exercises the permission-delta judging and verifier escalation rules from Spec §38.
+
+### What the SKILL still does (Reasoning + Policy layers)
+
+* Decide which mode to run, in what order.
+* Dispatch sub-agents to the right phase.
+* Read runtime state to render `--action=status` and decide what's next.
+* Run the Review Chamber debate (LLM responsibility).
+* Apply permission-delta methodology (Policy layer).
+* The SKILL **never** writes to `audit-state.json`, `findings.json`, or `coverage-ledger.json` directly. It only shells out to `mini-audit-runtime`.
+
 ## Slash command mapping (Piolium → mini-audit)
 
 | Piolium slash command | mini-audit invocation |
@@ -308,37 +480,84 @@ You are the <name> role. Follow the role specification below.
 
 **No Piolium upstream tracking** (architectural decision): the 28 inline agent templates and 7 first-class agent prompts are a **one-time import**. We do NOT maintain bidirectional sync with Piolium. If a Piolium update lands new patterns of interest, the user re-imports manually. The 108 substitution renames (rounds 1-3) are also a one-time cost — the user has accepted that this fork will drift from Piolium over time.
 
-## State machine (memory-backed, replaces Piolium's `audit-state.json`)
+## State machine (memory-backed + on-disk canonical, Runtime Hardening v1)
 
 Each phase has status: `pending` → `in_progress` → `complete` | `failed` | `skipped`.
 
-Store the audit state in **agent memory** under the topic name `mini-audit-state-<audit_id>`. Use `mavis memory target=main` (or a per-audit topic) to read/write. Each phase entry has the same shape Piolium uses:
+As of Runtime Hardening v1 (see [§ Runtime Hardening](#runtime-hardening-v1-deterministic-layer)), the **canonical state lives on disk at `<cwd>/mini-audit/audit-state.json`**, owned by the deterministic runtime. Agent memory may still hold a snapshot for fast cache reads, but it is **not** the resume authority. All writes to `audit-state.json` go through the `mini-audit-runtime` CLI; the SKILL never edits the JSON directly.
+
+Phase entry shape (mirrored by `runtime.state.PhaseState`):
 
 ```yaml
 audit_id: <iso-ts>
 mode: <mode>
-status: <in_progress|complete|failed>
-started_at: <iso>
-completed_at: <iso>
+status: <in_progress|complete|incomplete|blocked>
+source:
+  repository: <git remote or null>
+  root: <abs path>
+  commit: <sha>
+  branch: <name>
+  dirty: <bool>
+  tree_hash: <sha>
+runtime:
+  version: "1.0.0"
+  agent_sdk: mavis
+  model: <name>
 phases:
   L1:
+    name: L1
     status: complete
-    attempts: 1
-    artifacts: [<rel-path>, ...]
+    attempt: 1
+    max_attempts: 2
+    started_at: <iso>
+    completed_at: <iso>
+    heartbeat_at: <iso>
+    artifacts:
+      - { path: mini-audit/attack-surface/intent-corpus.json, sha256: ... }
     last_error: null
-  L2:
-    status: in_progress
-    attempts: 1
-    artifact_gate: <rel-path>
-  L3:
-    status: failed
-    attempts: 2
-    last_error: "rate limited, retry in 5s"
 ```
 
-### Why memory over `audit-state.json`?
+**Forbid**:
 
-mavis runtime provides process-local file mutation ordering out of the box. Cross-session resumability is the only thing that needs to live on disk — memory gives us that with native indexing. If the user explicitly wants on-disk state for cross-host portability, write a JSON snapshot to `<cwd>/mini-audit/audit-state.json` after each phase.
+* `pending → complete` (must go through `in_progress`)
+* `failed → complete` (must re-enter `in_progress`)
+* `complete → complete` (no-op)
+
+**Allowed recovery**:
+
+* `failed → in_progress → complete`
+
+The orchestrator does NOT hand-edit state. It shells out to:
+
+```bash
+mini-audit-runtime state init --repo-root <path> --audit-root mini-audit
+mini-audit-runtime phase start L5
+mini-audit-runtime phase complete L5
+mini-audit-runtime phase fail L5 --error "..."
+mini-audit-runtime phase skip L5
+mini-audit-runtime gate L5
+mini-audit-runtime state show
+```
+
+### Resume protocol
+
+Before resuming (`--action=resume`), the runtime captures a fresh `SourceIdentity` and compares against the stored one:
+
+```bash
+mini-audit-runtime source diff --repo-root <path> --audit-root mini-audit
+```
+
+| `commit` / `tree_hash` change | Behavior |
+|------------------------------|----------|
+| both unchanged | reuse complete phases; resume from first non-terminal |
+| either changed | `SOURCE_CHANGED`; refuse to silently reuse; require `--accept-source-change` to acknowledge; artifact-only phases may be re-validated, source-derived phases must rerun |
+
+### Why both memory and disk?
+
+* Disk (`audit-state.json`) is the **durable truth** — survives process death, cross-host portability, gates, fingerprinting, coverage ledger all read from it.
+* Memory is a **read cache** for the orchestrator so it can render status without re-parsing JSON on every tool call. Writes always go to disk via the CLI.
+
+See [§ Runtime Hardening](#runtime-hardening-v1-deterministic-layer) for the full architecture.
 
 ## Artifact gate (deterministic, not the agent's word)
 

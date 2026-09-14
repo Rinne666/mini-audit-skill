@@ -1,0 +1,22 @@
+{
+  "id": "EVAL-NEG-004",
+  "name": "ORM parameterization eliminates SQLi false positive",
+  "class": "sql_injection",
+  "input": {
+    "id": "F-104",
+    "verdict": "needs_validation",
+    "class": "sql_injection",
+    "title": "User input flows into Django ORM .filter(username=...) — alleged SQLi",
+    "summary": "Semgrep flagged user input reaching a Django ORM filter as 'sql-injection'. The ORM emits parameterized SQL; no string interpolation occurs.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote unauthenticated user", "existing_authority": "search by username"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/api/users.py", "line": 17, "symbol": "search_user"},
+      {"kind": "sink", "file": "src/api/users.py", "line": 19, "symbol": "User.objects.filter"}
+    ],
+    "root_cause": "Scanner false positive — ORM emits parameterized query"
+  },
+  "expected_verdict": "rejected",
+  "expected_disposition_reason": "hypothetical_chain",
+  "rationale": "ORM emits prepared statements. Scanner can't tell; technical verifier confirms parameterized SQL by inspecting the generated cursor."
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/audit-state.schema.json",
+  "title": "mini-audit audit-state",
+  "description": "Canonical audit state. Single source of truth for resume. Mutated only via the runtime CLI.",
+  "type": "object",
+  "required": ["schema_version", "audit_id", "mode", "status", "source", "runtime", "phases", "started_at", "updated_at"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Bumped when breaking changes are made to this schema."
+    },
+    "audit_id": {"type": "string", "minLength": 1},
+    "mode": {"enum": ["lite", "balanced", "deep", "diff", "revisit", "longshot", "merge"]},
+    "status": {"enum": ["in_progress", "complete", "incomplete", "blocked"]},
+    "source": {
+      "type": "object",
+      "required": ["root", "commit", "tree_hash"],
+      "properties": {
+        "repository": {"type": ["string", "null"]},
+        "root": {"type": "string"},
+        "commit": {"type": "string"},
+        "branch": {"type": "string"},
+        "dirty": {"type": "boolean"},
+        "tree_hash": {"type": "string"}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["version"],
+      "properties": {
+        "version": {"type": "string"},
+        "agent_sdk": {"type": "string"},
+        "model": {"type": "string"}
+      }
+    },
+    "phases": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/PhaseState"}
+    },
+    "started_at": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "completed_at": {"type": ["string", "null"]}
+  },
+  "$defs": {
+    "PhaseState": {
+      "type": "object",
+      "required": ["name", "status"],
+      "properties": {
+        "name": {"type": "string"},
+        "status": {"enum": ["pending", "in_progress", "complete", "failed", "skipped"]},
+        "attempt": {"type": "integer", "minimum": 0},
+        "max_attempts": {"type": "integer", "minimum": 1},
+        "started_at": {"type": ["string", "null"]},
+        "heartbeat_at": {"type": ["string", "null"]},
+        "completed_at": {"type": ["string", "null"]},
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "sha256"],
+            "properties": {
+              "path": {"type": "string"},
+              "sha256": {"type": "string"}
+            }
+          }
+        },
+        "last_error": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

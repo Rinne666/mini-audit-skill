@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/coverage-ledger.schema.json",
+  "title": "mini-audit coverage-ledger",
+  "description": "Coverage ledger state machine (Spec §20). Audit cannot complete while any planned unit remains.",
+  "type": "object",
+  "required": ["schema_version", "audit_id", "units"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "audit_id": {"type": "string"},
+    "units": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/Unit"}
+    }
+  },
+  "$defs": {
+    "Unit": {
+      "type": "object",
+      "required": ["id", "subsystem", "boundary", "attack_class", "status"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9.\\-_]+\\|[a-z0-9.\\-_]+\\|[a-z0-9.\\-_]+$"},
+        "subsystem": {"type": "string"},
+        "boundary": {"type": "string"},
+        "attack_class": {"type": "string"},
+        "status": {"enum": ["planned", "in_progress", "covered", "candidate", "blocked", "deferred", "out_of_scope"]},
+        "reviewed_paths": {"type": "array", "items": {"type": "string"}},
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "status"],
+            "properties": {
+              "id": {"type": "string"},
+              "status": {"type": "string"},
+              "agent_id": {"type": "string"},
+              "method": {"enum": ["source", "runtime", "scanner", "external"]},
+              "note": {"type": "string"}
+            }
+          }
+        },
+        "candidate_ids": {"type": "array", "items": {"type": "string"}},
+        "gaps": {"type": "array", "items": {"type": "string"}},
+        "updated_at": {"type": "string"}
+      }
+    }
+  }
+}

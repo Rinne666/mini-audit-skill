@@ -1,0 +1,23 @@
+{
+  "id": "EVAL-POS-003",
+  "name": "Server-Side Request Forgery on webhook registration",
+  "class": "ssrf",
+  "input": {
+    "id": "F-003",
+    "verdict": "needs_validation",
+    "class": "ssrf",
+    "title": "Webhook URL fetcher does not block internal metadata endpoints",
+    "summary": "POST /webhooks accepts a URL and the service GETs it for reachability checks. The fetcher does not block 169.254.169.254 or 127.0.0.1.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "authenticated low-privilege user", "existing_authority": "register a webhook pointing to a public URL"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/webhooks/register.py", "line": 12, "symbol": "register_webhook"},
+      {"kind": "sink", "file": "src/http/fetcher.py", "line": 90, "symbol": "fetch"}
+    ],
+    "root_cause": "No allowlist / denylist of internal network ranges in the URL fetcher"
+  },
+  "expected_verdict": "confirmed",
+  "expected_disposition_reason": null,
+  "expected_min_severity": "high",
+  "rationale": "Classic SSRF to cloud metadata service. Boundary sentence fillable: actor who could previously only register webhooks pointing to public endpoints can now retrieve instance metadata."
+}

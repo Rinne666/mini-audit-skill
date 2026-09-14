@@ -1,0 +1,23 @@
+{
+  "id": "EVAL-POS-008",
+  "name": "CSRF on authenticated state-changing endpoint",
+  "class": "csrf",
+  "input": {
+    "id": "F-008",
+    "verdict": "needs_validation",
+    "class": "csrf",
+    "title": "POST /account/email does not require CSRF token; relies only on session cookie",
+    "summary": "The endpoint sets SameSite=None (cross-site iframe usage requires it). CSRF protection layer is missing. A malicious page can submit a cross-origin form to change the victim's email and trigger password reset.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote attacker hosting malicious page", "existing_authority": "lure victim to attacker-controlled page"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/account/email.py", "line": 12, "symbol": "change_email"},
+      {"kind": "validator_missing", "file": "src/middleware/csrf.py", "line": 1, "symbol": "check_csrf_token"}
+    ],
+    "root_cause": "No CSRF middleware; SameSite=None required by third-party embed use case"
+  },
+  "expected_verdict": "confirmed",
+  "expected_disposition_reason": null,
+  "expected_min_severity": "high",
+  "rationale": "Spec §39 hard bug recall target. Reproduced in lab: PoC page changed victim's email to attacker@evil.tld in 3 seconds."
+}

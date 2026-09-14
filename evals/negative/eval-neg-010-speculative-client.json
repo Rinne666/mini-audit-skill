@@ -1,0 +1,21 @@
+{
+  "id": "EVAL-NEG-010",
+  "name": "Speculative client behavior: relies on browser fix",
+  "class": "csrf",
+  "input": {
+    "id": "F-110",
+    "verdict": "needs_validation",
+    "class": "csrf",
+    "title": "Missing CSRF token on legacy IE11 endpoint (browser mitigates)",
+    "summary": "Legacy IE11-only endpoint lacks CSRF token. Modern browsers' SameSite cookie default blocks the attack. No IE11 users in production telemetry for 18 months.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote attacker targeting IE11", "existing_authority": "n/a — no IE11 users"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/legacy/ie11.py", "line": 12, "symbol": "submit_form"}
+    ],
+    "root_cause": "Endpoint only used by IE11; no users"
+  },
+  "expected_verdict": "rejected",
+  "expected_disposition_reason": "speculative_client_behavior",
+  "rationale": "Endpoint unused. disposition_reason=speculative_client_behavior."
+}

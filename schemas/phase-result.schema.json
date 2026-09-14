@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/phase-result.schema.json",
+  "title": "mini-audit phase-result",
+  "description": "Result returned by every sub-agent (Spec §8). Stored at mini-audit/tmp/phase-results/<phase>/<attempt>.json.",
+  "type": "object",
+  "required": ["phase", "status", "summary"],
+  "additionalProperties": true,
+  "properties": {
+    "phase": {"type": "string"},
+    "status": {"enum": ["complete", "partial", "failed"]},
+    "summary": {"type": "string", "minLength": 1},
+    "artifacts": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "candidate_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": {"type": ["number", "string", "boolean"]}
+    }
+  }
+}

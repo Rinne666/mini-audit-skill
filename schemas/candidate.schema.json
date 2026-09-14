@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/candidate.schema.json",
+  "title": "mini-audit candidate",
+  "description": "Candidate record produced by Review Chamber or scanner normalization (Spec §13, §28). Never a confirmed finding.",
+  "type": "object",
+  "required": ["candidate_id", "source", "status"],
+  "additionalProperties": true,
+  "properties": {
+    "candidate_id": {"type": "string", "pattern": "^cand-[a-z0-9-]{3,}$"},
+    "source": {"type": "string", "description": "Provenance: 'semgrep', 'codeql', 'gitleaks', 'review-chamber', ...", "minLength": 1},
+    "rule_id": {"type": "string"},
+    "file": {"type": "string"},
+    "line": {"type": "integer", "minimum": 0},
+    "message": {"type": "string"},
+    "class": {"type": "string"},
+    "confidence": {"enum": ["unknown", "low", "medium", "high"]},
+    "status": {"enum": ["untriaged", "promoted", "rejected", "needs_validation"]},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "claim": {"type": "string"},
+    "attacker": {"type": "string"},
+    "boundary_hypothesis": {"type": "string"},
+    "trace_hypothesis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {"type": "string"},
+          "file": {"type": "string"},
+          "line": {"type": "integer"},
+          "symbol": {"type": "string"}
+        }
+      }
+    },
+    "debate_status": {"enum": ["open", "closed"]},
+    "promotion_recommendation": {"enum": ["PROMOTE_FOR_VERIFICATION", "REJECT", "DEFER"]}
+  }
+}

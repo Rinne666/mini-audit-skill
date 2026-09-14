@@ -1,0 +1,23 @@
+{
+  "id": "EVAL-POS-002",
+  "name": "Broken authentication on password-reset flow",
+  "class": "broken_authentication",
+  "input": {
+    "id": "F-002",
+    "verdict": "needs_validation",
+    "class": "broken_authentication",
+    "title": "Password reset endpoint accepts user-controlled expiry timestamp",
+    "summary": "POST /auth/reset accepts { token, new_password, expires_at } and trusts expires_at, allowing an attacker who intercepted the reset token to extend its validity indefinitely.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote unauthenticated attacker who has captured a reset token", "existing_authority": "use reset token within 30 minutes"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/auth/reset.py", "line": 22, "symbol": "complete_reset"},
+      {"kind": "sink", "file": "src/auth/token_service.py", "line": 110, "symbol": "validate_token"}
+    ],
+    "root_cause": "expires_at is taken from the request body and used for validation instead of server-side issue time + 30min"
+  },
+  "expected_verdict": "confirmed",
+  "expected_disposition_reason": null,
+  "expected_min_severity": "critical",
+  "rationale": "Pre-auth password reset bypass via user-supplied timestamp. Boundary sentence is fillable."
+}

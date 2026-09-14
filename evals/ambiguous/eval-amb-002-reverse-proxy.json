@@ -1,0 +1,21 @@
+{
+  "id": "EVAL-AMB-002",
+  "name": "Path traversal sanitized in app, depends on reverse proxy behavior",
+  "class": "path_traversal",
+  "input": {
+    "id": "F-202",
+    "verdict": "needs_validation",
+    "class": "path_traversal",
+    "title": "/static/../etc/passwd allegedly traverses nginx default config",
+    "summary": "App code rejects ../ in /static/*. Whether the upstream nginx normalizes the URL before forwarding depends on the specific deployment's nginx config (merge_slashes, etc.). Production config not yet inspected.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote unauthenticated", "existing_authority": "fetch /static/*"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/api/static.py", "line": 8, "symbol": "serve_static"}
+    ],
+    "root_cause": "Path normalization delegated to reverse proxy"
+  },
+  "expected_verdict": "needs_validation",
+  "expected_disposition_reason": null,
+  "rationale": "Per Spec §38 ambiguous category: 'requires deployment-specific reverse proxy behavior'. Verdict stays needs_validation until deployment config is verified."
+}

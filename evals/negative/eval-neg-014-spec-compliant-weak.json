@@ -1,0 +1,21 @@
+{
+  "id": "EVAL-NEG-014",
+  "name": "Spec-compliant weak default: BCrypt cost factor 10",
+  "class": "weak_crypto",
+  "input": {
+    "id": "F-114",
+    "verdict": "needs_validation",
+    "class": "weak_crypto",
+    "title": "Password hashing uses bcrypt cost=10 (lower than current OWASP recommendation)",
+    "summary": "bcrypt cost=10 is the framework default. OWASP recommends 12+. Spec §18 default_security: spec_compliant_weak_default — the implementation matches the framework default; the default is documented in the framework security policy.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "n/a", "existing_authority": "n/a"},
+    "trace": [
+      {"kind": "config", "file": "config/auth.yaml", "line": 4, "symbol": "bcrypt_cost"}
+    ],
+    "root_cause": "Framework default; no override detected"
+  },
+  "expected_verdict": "rejected",
+  "expected_disposition_reason": "hardening_only",
+  "rationale": "Per Spec §18: spec_compliant_weak_default. The implementation is intentional, the user can raise the cost via config. disposition_reason=hardening_only."
+}

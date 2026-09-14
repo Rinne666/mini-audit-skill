@@ -1,0 +1,21 @@
+{
+  "id": "EVAL-NEG-002",
+  "name": "Public share link allows unauthenticated read (by-design)",
+  "class": "idor",
+  "input": {
+    "id": "F-102",
+    "verdict": "needs_validation",
+    "class": "idor",
+    "title": "Public share link exposes document content without login",
+    "summary": "GET /share/:token returns document body when token is valid. The product is a document sharing platform; share links are intentionally public.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote unauthenticated user with a valid share token", "existing_authority": "n/a — share tokens are intended to be public"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/share/view.py", "line": 22, "symbol": "view_shared"}
+    ],
+    "root_cause": "By design — share tokens are bearer credentials"
+  },
+  "expected_verdict": "rejected",
+  "expected_disposition_reason": "by_design",
+  "rationale": "The whole product is built around bearer share tokens. disposition_reason=by_design."
+}

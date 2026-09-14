@@ -1,0 +1,23 @@
+{
+  "id": "EVAL-POS-007",
+  "name": "Multi-step exploit: open-redirect + OAuth token theft",
+  "class": "open_redirect",
+  "input": {
+    "id": "F-007",
+    "verdict": "needs_validation",
+    "class": "open_redirect",
+    "title": "OAuth callback accepts arbitrary redirect_uri; combined with auth-code interception, full account takeover",
+    "summary": "OAuth callback /oauth/callback accepts ?redirect_uri=ANY without allowlist. Attacker phishes user with ?redirect_uri=https://evil/?code=STOLEN; victim's browser delivers the auth code to evil.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote attacker with phishing capability", "existing_authority": "send user a link"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/oauth/callback.py", "line": 17, "symbol": "handle_callback"},
+      {"kind": "sink", "file": "src/oauth/callback.py", "line": 28, "symbol": "redirect_to"}
+    ],
+    "root_cause": "redirect_uri is not validated against the registered client redirect_uris"
+  },
+  "expected_verdict": "confirmed",
+  "expected_disposition_reason": null,
+  "expected_min_severity": "critical",
+  "rationale": "Multi-step: phishing + open-redirect + missing redirect_uri allowlist. Spec §39 lists multi-step exploit as a hard bug recall target."
+}

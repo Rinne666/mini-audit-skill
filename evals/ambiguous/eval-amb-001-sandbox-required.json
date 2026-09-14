@@ -1,0 +1,22 @@
+{
+  "id": "EVAL-AMB-001",
+  "name": "SSRF via URL parser differential — needs sandbox reproduction",
+  "class": "ssrf",
+  "input": {
+    "id": "F-201",
+    "verdict": "needs_validation",
+    "class": "ssrf",
+    "title": "URL parser differential may allow internal redirect to metadata service",
+    "summary": "Python urllib follows http://attacker.com#@169.254.169.254/ differently from requests. Without running a real DNS+HTTP reproduction, we cannot tell whether the differential is exploitable. Deployment uses EKS.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote low-privilege user", "existing_authority": "submit URL"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/webhooks/register.py", "line": 12, "symbol": "register_webhook"},
+      {"kind": "sink", "file": "src/http/fetcher.py", "line": 90, "symbol": "fetch"}
+    ],
+    "root_cause": "URL parser differential in fetcher"
+  },
+  "expected_verdict": "needs_validation",
+  "expected_disposition_reason": null,
+  "rationale": "Requires sandbox + DNS rebinding reproduction. Per Spec §25, missing sandbox capability ⇒ verdict=needs_validation. Spec §19: needs_validation must not assign a formal severity."
+}

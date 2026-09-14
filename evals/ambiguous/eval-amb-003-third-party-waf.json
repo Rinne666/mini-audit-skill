@@ -1,0 +1,22 @@
+{
+  "id": "EVAL-AMB-003",
+  "name": "XSS via rich-text paste depends on DOMPurify config + CSP",
+  "class": "xss",
+  "input": {
+    "id": "F-203",
+    "verdict": "needs_validation",
+    "class": "xss",
+    "title": "Rich-text paste can include <img onerror> if DOMPurify is misconfigured",
+    "summary": "DOMPurify default config blocks onerror. CSP header sets img-src 'self' 'unsafe-inline'. Need to verify deployment's exact DOMPurify build + CSP overrides.",
+    "source_ref": {"commit": "abc123", "tree_hash": "t"},
+    "attacker": {"identity": "remote unauthenticated user posting comments", "existing_authority": "post comment"},
+    "trace": [
+      {"kind": "entrypoint", "file": "src/comments/render.py", "line": 14, "symbol": "render_comment"},
+      {"kind": "sink", "file": "src/comments/render.py", "line": 22, "symbol": "DOMPurify.sanitize"}
+    ],
+    "root_cause": "Configuration-dependent"
+  },
+  "expected_verdict": "needs_validation",
+  "expected_disposition_reason": null,
+  "rationale": "Needs deployment-specific verification of DOMPurify version + CSP policy. Stays needs_validation until verified."
+}
