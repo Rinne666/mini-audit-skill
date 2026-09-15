@@ -496,6 +496,48 @@ test_spec_mounts_both_absolute_and_resolved_forms
 test_backends_refuse_relative_mounts[docker|bwrap]
 ```
 
+#### 推送后复跑发现：没有 docker 的主机会直接崩溃
+
+v1.1.1 第一次推送后复核 CI 结果时发现两个同源缺陷，都属于「只在特定环境下才暴露」的类型。
+
+**缺陷 A（更严重）：`sandbox probe` 在未安装 docker 的主机上抛 `FileNotFoundError`。**
+`verify_backend` 的后端不可用分支是 `image=getattr(backend, "image", "")`，而 `image`
+是一个会去执行 `docker image inspect` 的 property；`getattr` 的默认值**不能**覆盖
+property 自身抛出的异常。于是「docker 不存在」这条最该优雅处理的路径，反而直接抛
+`FileNotFoundError: 'docker'` —— 文档里让用户第一步执行的 `sandbox probe`，在任何未安装
+docker 的机器上都是完整 traceback。
+
+之所以没被测试发现：本机与两个 CI runner 都装了 docker —— **我们在唯一一个能跑通的环境里测试它**。
+
+修复：`_image_present` / `_daemon_up` 先 `shutil.which` 判存在并捕获 `OSError`，不存在即返回
+`False`。对比验证（同一命令、同一受限 PATH）：
+
+```text
+修复前 → FileNotFoundError: [Errno 2] No such file or directory: 'docker'
+修复后 → exit=1，reason: "no usable isolation backend on this host —
+          docker: docker not found on PATH; bwrap: bwrap not found on PATH;
+          sandbox-exec: sandbox_apply: Operation not permitted"
+          host_fallback: false
+```
+
+**缺陷 B：`MINI_AUDIT_DOCKER_IMAGE` 覆盖值不经校验即被当作「可用」。**
+`available()` 就是 `bool(self.image)`，而 env 分支把调用者给的 ref 原样返回，因此
+`MINI_AUDIT_DOCKER_IMAGE=typo:1` 会让后端**谎报可用**。连带效果是 live 测试的 skip 守卫不可靠：
+同一个 `skipif` 守卫用 `b.available()`，在本地（镜像存在但 env 被改成不存在的 ref → 守卫为真
+→ 测试真的跑 → 断言失败）与 CI（无任何候选镜像 → 守卫为假 → 干净 skip）表现不同，同一套代码
+一处硬失败一处静默跳过。
+
+修复：env 覆盖值同样经 `_image_present` 校验，不在就返回 `""`；`unavailable_reason()` 明确
+点出是覆盖值有问题（`MINI_AUDIT_DOCKER_IMAGE='typo:1' is not present locally`），而不是含糊地
+说「没有可用镜像」。回归测试：
+
+```text
+test_docker_backend_without_a_docker_binary_reports_unavailable
+test_env_image_override_is_not_taken_on_trust
+```
+
+同时给 CI 的 pytest 加上 `-rs`：skip 必须带原因打印，不能藏在绿色勾后面。
+
 ### 3. Semgrep 的 host fallback
 
 `scripts/run-semgrep.sh` 在找不到 `sandbox-run.sh` 时会直接在宿主机上跑 semgrep，
@@ -527,9 +569,17 @@ doc_counts / eval 自检 / shell 语法；第二个 job 拉取 `alpine:3.20` 后
 ## 验证
 
 ```text
-pytest tests/unit                              393 passed
+pytest tests/unit                              395 passed
 scripts/manifest.py --check                    up to date (130 items)
 scripts/check-manifest.py --strict             0 errors / 1 license warning
 scripts/doc_counts.py --check                  consistent
 evals/run.py --self-check                      30 fixtures, 0 errors
+```
+
+GitHub Actions（push `b32ba27`，run `34945876839`）三个 job 全绿：
+
+```text
+verify (py3.9)                390 passed, 3 skipped   ← 3 个 skip = live 容器测试（该 job 未预拉镜像）
+verify (py3.13)               393 passed
+sandbox containment           42 passed, 0 skipped    ← 真实容器隔离测试确实执行了
 ```

@@ -338,35 +338,64 @@ class DockerBackend(IsolationBackend):
 
     def __init__(self, image: Optional[str] = None) -> None:
         self._image = image
+        self._resolved = image is not None
 
     # -- availability -------------------------------------------------------
 
     @property
     def image(self) -> str:
-        if self._image:
-            return self._image
+        """The image to run, or ``""`` when none is actually usable.
+
+        Resolution is cached because ``available()`` is called from test skip
+        guards and from every probe iteration.
+
+        An explicit ``MINI_AUDIT_DOCKER_IMAGE`` is honoured only when it is
+        genuinely present: treating a typo (or a ref that was never pulled) as
+        "docker is available" would turn a clear configuration error into a
+        confusing downstream failure.
+        """
+        if self._resolved:
+            return self._image or ""
+
         env = os.environ.get("MINI_AUDIT_DOCKER_IMAGE")
         if env:
-            self._image = env
-            return env
-        for candidate in self.IMAGE_CANDIDATES:
-            if self._image_present(candidate):
-                self._image = candidate
-                return candidate
-        return ""
+            self._image = env if self._image_present(env) else ""
+        else:
+            self._image = ""
+            for candidate in self.IMAGE_CANDIDATES:
+                if self._image_present(candidate):
+                    self._image = candidate
+                    break
+        self._resolved = True
+        return self._image
 
     def _image_present(self, ref: str) -> bool:
-        proc = subprocess.run(
-            [self.binary, "image", "inspect", ref],
-            capture_output=True, text=True, check=False,
-        )
+        # A missing binary must read as "not present", not raise: this is
+        # reached from `verify_backend`'s early-return path, i.e. precisely when
+        # docker is *absent*. Shelling out to a binary that does not exist
+        # raised FileNotFoundError there, so `sandbox probe` used to traceback
+        # on any host without docker instead of reporting it as unavailable.
+        if not self.binary or shutil.which(self.binary) is None:
+            return False
+        try:
+            proc = subprocess.run(
+                [self.binary, "image", "inspect", ref],
+                capture_output=True, text=True, check=False,
+            )
+        except OSError:
+            return False
         return proc.returncode == 0
 
     def _daemon_up(self) -> bool:
-        proc = subprocess.run(
-            [self.binary, "info", "--format", "{{.ServerVersion}}"],
-            capture_output=True, text=True, check=False,
-        )
+        if not self.binary or shutil.which(self.binary) is None:
+            return False
+        try:
+            proc = subprocess.run(
+                [self.binary, "info", "--format", "{{.ServerVersion}}"],
+                capture_output=True, text=True, check=False,
+            )
+        except OSError:
+            return False
         return proc.returncode == 0
 
     def available(self) -> bool:
@@ -382,6 +411,12 @@ class DockerBackend(IsolationBackend):
         if not self._daemon_up():
             return "docker daemon not reachable"
         if not self.image:
+            env = os.environ.get("MINI_AUDIT_DOCKER_IMAGE")
+            if env:
+                return (
+                    f"MINI_AUDIT_DOCKER_IMAGE={env!r} is not present locally "
+                    "(docker image inspect failed); pull it or unset the override"
+                )
             return (
                 "no usable image present locally "
                 f"(tried {', '.join(self.IMAGE_CANDIDATES)}); "

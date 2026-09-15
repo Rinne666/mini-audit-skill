@@ -41,7 +41,10 @@ jobs:
           python -m pip install "pytest>=8,<9"
 
       - name: Unit + hardening tests
-        run: python -m pytest tests/unit -q
+        # `-rs` so a skip is never silent: the live-container tests skip here
+        # when no sandbox image is staged, and that reason has to be visible
+        # rather than hidden behind a green tick.
+        run: python -m pytest tests/unit -q -rs
 
       - name: Manifest integrity (references/MANIFEST.json ↔ disk)
         run: |

@@ -410,3 +410,54 @@ def test_network_denial_is_not_credited_when_nothing_was_reachable(
     assert report.evidence["net_baseline_reachable"] is False
     assert report.evidence["net_probe_target"] is None
     assert "undeterminable" in report.detail
+
+
+# ---------------------------------------------------------------------------
+# Availability must be honest, and must not raise — found after the first push
+# ---------------------------------------------------------------------------
+
+
+def test_docker_backend_without_a_docker_binary_reports_unavailable(
+    tmp_path: Path,
+) -> None:
+    """Regression: `sandbox probe` used to *traceback* on a host without docker.
+
+    `verify_backend` returns early through `getattr(backend, "image", "")`, and
+    the `image` property shelled out to the binary to probe for candidates. So
+    the exact path taken when docker is **absent** raised FileNotFoundError —
+    `getattr`'s default does not cover a property that raises. Both CI and the
+    development host have docker, which is why nothing caught it.
+    """
+    class Missing(DockerBackend):
+        binary = "docker-definitely-not-installed-xyz"
+
+    backend = Missing()
+    assert backend.available() is False
+    assert backend.image == ""  # must not raise
+    assert "not found on PATH" in backend.unavailable_reason()
+
+    report = verify_backend(backend, _spec(tmp_path, KIND_POC), timeout_seconds=10)
+    assert report.usable is False
+    assert report.demonstrated == []
+    assert all(v is False for v in report.controls.values())
+
+
+def test_env_image_override_is_not_taken_on_trust(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A typo in MINI_AUDIT_DOCKER_IMAGE must not read as "docker is available".
+
+    `available()` is `bool(self.image)`, so returning the override verbatim made
+    an unpulled ref report availability. That also made the live-test skip
+    guards unreliable: the same environment produced a hard failure locally and
+    a clean skip on CI.
+    """
+    import shutil as _shutil
+
+    monkeypatch.setenv("MINI_AUDIT_DOCKER_IMAGE", "nonexistent-image:9.9")
+    backend = DockerBackend()
+
+    assert backend.image == "", "an unpulled ref must not be reported as present"
+    assert backend.available() is False
+
+    # The reason names the override when docker itself is reachable.
+    if _shutil.which(backend.binary) and backend._daemon_up():
+        assert "nonexistent-image:9.9" in backend.unavailable_reason()
