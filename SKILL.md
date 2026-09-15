@@ -245,7 +245,8 @@ Eval corpus under `evals/{positive,negative,ambiguous,}` exercises the permissio
 | runtime wordlists | 5 |
 | eval fixtures | 30 |
 | first-class roles | 7 |
-| runtime version | 1.1.0 |
+| phase gates declared | 38 |
+| runtime version | 1.1.1 |
 | commands: full / partial / stub | 8 / 5 / 4 |
 <!-- END auto-counts -->
 
@@ -676,6 +677,42 @@ After every phase, the orchestrator must check the gate artifact on disk before 
 - P15 final: `mini-audit/final-audit-report.md`
 - P16 patch-bypass: `mini-audit/findings/<id>-<slug>/patch-bypass.md` (per finding with a known fix)
 - P17 cleanup: `mini-audit/attack-surface/cleanup-manifest.json` (transient paths removed)
+
+### Gate coverage
+
+**Gate coverage: 38 phases declare a deterministic gate** — the ungated
+remainder is listed below rather than assumed away.
+
+| Mode | Gated | Ungated (no dedicated artifact) |
+|------|-------|----------------------------------|
+| lite | Q0, Q1, Q2, Q3, Q4 | — |
+| balanced | L1, L2, L3, L4, L5, L6, L6b, L6c, L7 | — |
+| deep | P1, P1.5, P2, P3, P8, P9, P10, P12, P13, P14, P15, P16, P17 | P4, P5, P6, P7, P11 |
+| confirm | V1, V7 | V1.5, V2, V3, V4, V5, V6 |
+| revisit | R0 | R5, R7, R8, R9, R10, R10k, R11, R11b, R11c |
+| merge | — | M1, M2, M3, M4, M5, M6, M7 |
+| longshot | X1, X2, X3 | — |
+| reinvest | I2 | I1, I3 |
+| knowledge-base | K1, K2 | KB0 |
+| judge | J1, J2 | — |
+
+A phase is gated when it writes a **dedicated artifact file** the runtime can
+`stat`, parse and schema-check on disk. The ungated set is deliberate:
+
+- **P4–P7, P11** write *sections* into a shared document
+  (`knowledge-base-report.md`, `probe-workspace/*/probe-summary.md`,
+  `findings/*/cold-verify-verdict.md`) that other phases also write, so a
+  per-phase existence gate would be satisfied by a sibling phase's output.
+- **V1.5, V2–V6** are per-finding and optional (V1.5 is skipped when no intent
+  corpus exists; V2–V5 only run for findings with a runnable PoC).
+- **R5–R11c, M1–M7, I1, I3, KB0** re-run agents over an existing finding set
+  or are optional intake steps with no documented artifact path.
+
+Gating those would block legitimate completion, which is worse than an honest
+gap. `runtime/gates.py` owns the canonical sets (`gated_phases(mode)` /
+`ungated_phases(mode)`), `scripts/doc_counts.py` verifies the count quoted here,
+and `tests/unit/test_gate_coverage.py` fails if a phase is silently moved from
+one set to the other.
 
 ## Hard filter at the gate (mandatory, no finding escapes these three)
 

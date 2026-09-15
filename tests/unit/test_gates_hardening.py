@@ -334,6 +334,61 @@ def test_l7_gate_blocks_on_non_terminal_phase(tmp_path: Path) -> None:
     assert any("non-terminal phases" in f.message for f in result.failures)
 
 
+def test_l7_gate_blocks_on_missing_planning_status(tmp_path: Path) -> None:
+    """v1.1.1: a coverage ledger that omits `planning_status` must not pass L7.
+
+    `completeness_report()` was already strict, but the *gate* tolerated a
+    missing field (`if planning_status is not None and ...`), so handing the
+    runtime a ledger with no planning lifecycle recorded slipped past the
+    final gate entirely.
+    """
+    _write(tmp_path / "mini-audit/findings.json",
+           {"schema_version": 1, "audit_id": "a", "findings": [_finding()]})
+    _write(tmp_path / "mini-audit/final-audit-report.md", "# report\n" + "content " * 30)
+    _write(tmp_path / "mini-audit/coverage-ledger.json", {
+        "schema_version": 1, "audit_id": "a",
+        "units": [{"id": "a|b|c", "subsystem": "a", "boundary": "b",
+                   "attack_class": "c", "status": "covered"}],
+    })
+    _write(tmp_path / "mini-audit/audit-state.json", _valid_audit_state())
+
+    result = GateRunner(workdir=tmp_path).run(gate_for("L7"), ctx={"required_phases": ["L1"]})
+    assert not result.passed
+    checks = {f.check for f in result.failures}
+    assert "schema" in checks, [f.message for f in result.failures]
+    assert any("planning_status" in f.message for f in result.failures)
+
+
+def test_gate_fails_closed_when_declared_schema_cannot_be_loaded(tmp_path: Path) -> None:
+    """v1.1.1: a declared-but-unloadable schema must fail, not be skipped.
+
+    Previously `load_schema_or_none` returned None and the runner merely added a
+    note, which turned every declared schema into an advisory one.
+    """
+    _write(tmp_path / "artifact.json", {"anything": True})
+    gate = GateDefinition.from_dict({
+        "name": "X1",
+        "required": [{"path": "artifact.json", "parse_json": True,
+                      "schema": "definitely-not-a-real-schema"}],
+    })
+    result = GateRunner(workdir=tmp_path).run(gate)
+    assert not result.passed
+    assert any(f.check == "schema" and "could not be loaded" in f.message
+               for f in result.failures), [f.message for f in result.failures]
+
+
+def test_gate_fails_closed_when_items_schema_cannot_be_loaded(tmp_path: Path) -> None:
+    _write(tmp_path / "findings.json", {"findings": [{"id": "x"}]})
+    gate = GateDefinition.from_dict({
+        "name": "X2",
+        "required": [{"path": "findings.json", "parse_json": True,
+                      "items_key": "findings", "items_schema": "nope-not-real"}],
+    })
+    result = GateRunner(workdir=tmp_path).run(gate)
+    assert not result.passed
+    assert any("could not be loaded" in f.message for f in result.failures)
+
+
 def test_l7_gate_blocks_on_confirmed_without_verifier(tmp_path: Path) -> None:
     _write(tmp_path / "mini-audit/findings.json",
            {"schema_version": 1, "audit_id": "a", "findings": [_finding(with_verifier=False)]})

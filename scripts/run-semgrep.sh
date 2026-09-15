@@ -80,16 +80,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # invocation still runs the check-first pipeline rather than exec'ing directly,
 # so a policy change (e.g. requiring isolation for a hostile ruleset) applies
 # here too without touching this script.
-set +e
-if [[ -x "${SCRIPT_DIR}/sandbox-run.sh" ]]; then
-  "${SCRIPT_DIR}/sandbox-run.sh" --kind source-scan --audit-root "${AUDIT_ROOT}" -- \
-    semgrep "${CONFIG_ARGS[@]}" --sarif --output "$OUTPUT" --quiet "$REPO_ROOT"
-  rc=$?
-else
-  echo "warning: sandbox-run.sh missing; running semgrep without the sandbox policy" >&2
-  semgrep "${CONFIG_ARGS[@]}" --sarif --output "$OUTPUT" --quiet "$REPO_ROOT"
-  rc=$?
+#
+# v1.1.1: there is NO host fallback. If the policy wrapper is missing we cannot
+# apply the policy at all, and running anyway would silently contradict the
+# documented "never fall back to host execution" guarantee. Fail closed, exactly
+# like run-codeql.sh already does.
+if [[ ! -x "${SCRIPT_DIR}/sandbox-run.sh" ]]; then
+  echo "missing ${SCRIPT_DIR}/sandbox-run.sh; refusing to run semgrep outside the sandbox policy" >&2
+  exit 4
 fi
+
+set +e
+"${SCRIPT_DIR}/sandbox-run.sh" --kind source-scan --audit-root "${AUDIT_ROOT}" \
+  --repo-root "${REPO_ROOT}" -- \
+  semgrep "${CONFIG_ARGS[@]}" --sarif --output "$OUTPUT" --quiet "$REPO_ROOT"
+rc=$?
 set -e
 
 if [[ "$rc" -eq 4 ]]; then

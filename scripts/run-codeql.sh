@@ -93,7 +93,7 @@ if [[ ! -x "$SANDBOX_RUN" ]]; then
 fi
 
 set +e
-DESCRIBE_JSON="$("$SANDBOX_RUN" --kind "$KIND" --audit-root "$AUDIT_ROOT" --describe)"
+DESCRIBE_JSON="$("$SANDBOX_RUN" --kind "$KIND" --audit-root "$AUDIT_ROOT" --repo-root "$REPO_ROOT" --describe)"
 describe_rc=$?
 set -e
 
@@ -133,11 +133,11 @@ fi
 SUMMARY_STATUS="allowed"
 SUMMARY_REASON="codeql database create + analyze completed"
 set +e
-CREATE_JSON="$("$SANDBOX_RUN" --kind "$KIND" --audit-root "$AUDIT_ROOT" -- \
+CREATE_JSON="$("$SANDBOX_RUN" --kind "$KIND" --audit-root "$AUDIT_ROOT" --repo-root "$REPO_ROOT" -- \
   codeql database create "$DATABASE" --language="$LANGUAGE" --source-root="$REPO_ROOT" --overwrite)"
 rc=$?
 if [[ "$rc" -eq 0 ]]; then
-  ANALYZE_JSON="$("$SANDBOX_RUN" --kind "$KIND" --audit-root "$AUDIT_ROOT" -- \
+  ANALYZE_JSON="$("$SANDBOX_RUN" --kind "$KIND" --audit-root "$AUDIT_ROOT" --repo-root "$REPO_ROOT" -- \
     codeql database analyze "$DATABASE" --format=sarif-latest --output="$OUTPUT")"
   rc=$?
 fi

@@ -61,8 +61,12 @@ from .sandbox import (
     EXECUTION_KINDS,
     KIND_POC,
     check_sandbox,
+    evaluate_probe,
+    probe_document,
+    probe_file,
     run_probe_script,
     run_sandboxed,
+    write_probe,
 )
 from .scheduler import DEFAULT_CONFIG, dispatch
 from .source_identity import SourceIdentity, SourceIdentityError
@@ -137,11 +141,19 @@ def _run_phase_gate(audit_root: Path, phase: str, workdir: Path,
     """
     gate_def = gate_for(phase)
 
-    ctx: dict[str, Any] = {}
+    ctx: dict[str, Any] = {"current_phase": phase}
     if state is not None:
         skipped = {name for name, p in state.phases.items() if p.status == PHASE_SKIPPED}
+        # `required_phases` means "phases that must already be terminal before
+        # *this* phase may complete". The phase being completed is by definition
+        # still `in_progress` at gate time, so including it would make any gate
+        # that checks terminality fail against itself. L7 declares exactly such
+        # a check (`audit_state_terminal_phases`), which made `phase complete
+        # L7` impossible through the CLI: L7 could never observe itself as
+        # `complete` and so could never become `complete`.
         ctx["required_phases"] = [
-            name for name in state.phases if name not in skipped
+            name for name in state.phases
+            if name not in skipped and name != phase
         ]
 
     runner = GateRunner(workdir=workdir)
@@ -246,7 +258,9 @@ def cmd_phase_complete(args: argparse.Namespace) -> int:
             )
             return 1
     else:
-        # No declared gate for this phase (e.g. lite Q-phases, V/R/M phases).
+        # No declared gate for this phase — the deliberately-ungated set
+        # (deep P4-P7/P11, confirm V1.5/V2-V6, revisit R5-R11c, merge M1-M7,
+        # reinvest I1/I3, knowledge-base KB0). See SKILL.md "Gate coverage".
         # Record that explicitly rather than silently pretending it passed.
         gate_result = GateResult(name=args.phase, passed=True)
         gate_result.add_note(f"no default gate declared for phase {args.phase!r}; gate skipped")
@@ -486,11 +500,50 @@ def cmd_sarif_normalize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sandbox_probe(args: argparse.Namespace) -> int:
+    """Verify isolation backends by canary and write the probe document.
+
+    Hardening v1.1.1 §2 — this replaces a probe that only recorded what the host
+    *claimed* (`sandbox_available: docker exists`). Every backend is now
+    exercised with a differential canary, so the probe records demonstrated
+    controls.
+    """
+    audit_root = _resolve_audit_root(args)
+    audit_root.mkdir(parents=True, exist_ok=True)
+    probe = probe_document(
+        args.kind,
+        repo_root=args.repo_root,
+        audit_root=audit_root,
+        base_env=dict(os.environ),
+        timeout_seconds=args.probe_timeout,
+    )
+    write_probe(audit_root, probe)
+    decision = evaluate_probe(probe, args.kind, audit_root=audit_root)
+    payload = {
+        "ok": decision.ok,
+        "command": "sandbox.probe",
+        "probe_path": str(probe_file(audit_root)),
+        "backends": [
+            {
+                "backend": b.get("backend"),
+                "usable": b.get("usable"),
+                "demonstrated": b.get("demonstrated"),
+                "detail": b.get("detail"),
+            }
+            for b in probe["backends"]
+        ],
+        "decision": decision.to_dict(),
+    }
+    _emit(payload, exit_code=0 if decision.ok else 1)
+    return 0 if decision.ok else 1
+
+
 def cmd_sandbox_check(args: argparse.Namespace) -> int:
     """Evaluate the sandbox probe for an execution kind (Hardening v1.1 §8)."""
     audit_root = _resolve_audit_root(args)
     if args.run_probe:
-        decision = run_probe_script(audit_root, script=args.probe_script, strict=args.strict)
+        decision = run_probe_script(audit_root, script=args.probe_script, strict=args.strict,
+                                    kind=args.kind)
     else:
         decision = check_sandbox(args.kind, audit_root)
     payload = {"ok": decision.ok, "command": "sandbox.check", **decision.to_dict()}
@@ -507,10 +560,13 @@ def cmd_sandbox_run(args: argparse.Namespace) -> int:
     if not argv:
         _err("sandbox run requires a command after --")
 
+    repo_root = getattr(args, "repo_root", None)
     result = run_sandboxed(
         argv,
         kind=args.kind,
         audit_root=audit_root,
+        repo_root=repo_root,
+        cwd=Path(repo_root).resolve() if repo_root else None,
         timeout_seconds=args.timeout,
         env=dict(os.environ),
     )
@@ -805,11 +861,21 @@ def build_parser() -> argparse.ArgumentParser:
                               help="minimum risk score for D6 adversarial tasks")
     s_diff_stage.set_defaults(func=cmd_diff_stage)
 
-    # sandbox (Hardening v1.1 §8)
+    # sandbox (Hardening v1.1 §8, v1.1.1 §2)
     s_sandbox = add_sub("sandbox", help="sandbox policy operations")
     s_sandbox_sub = s_sandbox.add_subparsers(dest="subcommand", required=True)
+    s_sb_probe = s_sandbox_sub.add_parser(
+        "probe", parents=[audit_root_parent],
+        help="verify isolation backends by canary and write the probe document",
+    )
+    s_sb_probe.add_argument("--kind", choices=list(EXECUTION_KINDS), default=KIND_POC)
+    s_sb_probe.add_argument("--repo-root", default=".",
+                            help="source tree that the sandbox must expose read-only")
+    s_sb_probe.add_argument("--probe-timeout", type=float, default=45.0,
+                            help="per-canary timeout in seconds")
+    s_sb_probe.set_defaults(func=cmd_sandbox_probe)
     s_sb_check = s_sandbox_sub.add_parser("check", parents=[audit_root_parent],
-                                          help="evaluate sandbox capabilities for an execution kind")
+                                          help="evaluate the sandbox probe for an execution kind")
     s_sb_check.add_argument("--kind", choices=list(EXECUTION_KINDS), default=KIND_POC)
     s_sb_check.add_argument("--run-probe", action="store_true",
                             help="run scripts/sandbox-check.sh first, then evaluate")
@@ -819,6 +885,8 @@ def build_parser() -> argparse.ArgumentParser:
     s_sb_run = s_sandbox_sub.add_parser("run", parents=[audit_root_parent],
                                         help="run a command only if the sandbox policy allows it")
     s_sb_run.add_argument("--kind", choices=list(EXECUTION_KINDS), default=KIND_POC)
+    s_sb_run.add_argument("--repo-root", default=None,
+                          help="source tree exposed read-only inside the sandbox")
     s_sb_run.add_argument("--timeout", type=float, default=300.0)
     s_sb_run.add_argument("cmd", nargs=argparse.REMAINDER,
                           help="command to run (prefix with --)")

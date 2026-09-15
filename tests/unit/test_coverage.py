@@ -162,6 +162,23 @@ def test_ledger_schema_rejects_malformed_unit() -> None:
         })
 
 
+def test_ledger_schema_requires_planning_status() -> None:
+    """v1.1.1 — `planning_status` is a required field, so omitting it fails.
+
+    A ledger with no recorded planning lifecycle must not be loadable at all:
+    otherwise the only thing standing between it and the final gate is a
+    semantic check that used to tolerate the missing field.
+    """
+    with pytest.raises(CoverageLedgerError) as exc:
+        CoverageLedger.from_dict({
+            "schema_version": 1,
+            "audit_id": "t",
+            "units": [{"id": "a|b|c", "subsystem": "a", "boundary": "b",
+                       "attack_class": "c", "status": "covered"}],
+        })
+    assert "planning_status" in str(exc.value)
+
+
 def test_save_load_roundtrip(tmp_path: Path) -> None:
     path = tmp_path / "coverage-ledger.json"
     ledger = _ledger()

@@ -132,9 +132,34 @@ def test_gate_for_unknown_phase_raises() -> None:
 
 
 def test_semantic_coverage_no_planned() -> None:
-    ok, _ = run_semantic("coverage_no_planned", {"units": [{"status": "covered"}, {"status": "blocked"}]})
+    ok, _ = run_semantic("coverage_no_planned", {
+        "planning_status": "complete",
+        "units": [{"status": "covered"}, {"status": "blocked"}],
+    })
     assert ok
-    ok, _ = run_semantic("coverage_no_planned", {"units": [{"status": "planned"}]})
+    ok, _ = run_semantic("coverage_no_planned", {
+        "planning_status": "complete",
+        "units": [{"status": "planned"}],
+    })
+    assert not ok
+
+
+def test_semantic_coverage_requires_planning_status() -> None:
+    """v1.1.1: an absent planning_status is a failure, not a pass.
+
+    The old check was `planning_status is not None and ... != complete`, so a
+    ledger that simply omitted the field sailed through the final gate.
+    """
+    ok, reason = run_semantic("coverage_no_planned", {
+        "units": [{"status": "covered"}],
+    })
+    assert not ok, "missing planning_status must fail"
+    assert "planning_status" in reason or "planning is None" in reason
+
+    ok, _ = run_semantic("coverage_no_planned", {
+        "planning_status": "in_progress",
+        "units": [{"status": "covered"}],
+    })
     assert not ok
 
 

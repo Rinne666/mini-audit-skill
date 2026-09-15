@@ -4,13 +4,13 @@
   "title": "mini-audit coverage-ledger",
   "description": "Coverage ledger state machine (Spec §20). Audit cannot complete while any planned unit remains, while planning_status != complete, or while unit_count == 0 (Hardening v1.1 §9).",
   "type": "object",
-  "required": ["schema_version", "audit_id", "units"],
+  "required": ["schema_version", "audit_id", "planning_status", "units"],
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
     "audit_id": {"type": "string"},
     "planning_status": {
       "enum": ["not_started", "in_progress", "complete"],
-      "description": "Coverage planning lifecycle. Final gate requires 'complete' (Hardening v1.1 §9)."
+      "description": "Coverage planning lifecycle. Required: a ledger that never recorded its planning lifecycle must not be able to pass the final gate. Final gate requires 'complete' (Hardening v1.1 §9, v1.1.1)."
     },
     "units": {
       "type": "array",

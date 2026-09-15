@@ -256,8 +256,11 @@ def _check_coverage_no_planned(data: Mapping[str, Any], ctx: dict[str, Any]) -> 
     # Hardening v1.1 §9 — an empty plan must not count as "no unresolved units".
     if not units:
         return False, "coverage plan is empty (unit_count == 0)"
+    # v1.1.1: strict. `planning_status` is a required field, so an absent value
+    # is itself a failure — a ledger that never recorded its planning lifecycle
+    # cannot be treated as having finished it.
     planning_status = data.get("planning_status")
-    if planning_status is not None and planning_status != "complete":
+    if planning_status != "complete":
         return False, f"coverage planning is {planning_status!r}, not 'complete'"
     unresolved = [u for u in units if isinstance(u, Mapping) and u.get("status") in ("planned", "in_progress")]
     if unresolved:
@@ -268,10 +271,18 @@ def _check_coverage_no_planned(data: Mapping[str, Any], ctx: dict[str, Any]) -> 
 @register_semantic("audit_state_terminal_phases")
 def _check_audit_state_terminal(data: Mapping[str, Any], ctx: dict[str, Any]) -> tuple[bool, str]:
     phases = data.get("phases") or {}
-    required = ctx.get("required_phases") or []
-    if not required:
-        # No explicit requirement: every declared phase must be terminal.
-        required = list(phases.keys())
+    # The phase currently being gated is not "already terminal" by definition —
+    # it is the one we are deciding about. Excluding it here (as well as at the
+    # call site) keeps the check honest when `required_phases` is absent *or*
+    # empty, which is the normal shape early in an audit (state.init declares no
+    # phases, so completing the first phase leaves no other phase to require).
+    current = ctx.get("current_phase")
+    explicit = ctx.get("required_phases")
+    if explicit is None:
+        # No explicit requirement: every declared phase except the current one.
+        required = [name for name in phases if name != current]
+    else:
+        required = [name for name in explicit if name != current]
     bad = []
     for name in required:
         p = phases.get(name) or {}
@@ -356,7 +367,16 @@ class GateRunner:
     def _validate_schema(self, result: GateResult, payload: Any, schema_name: str, label: str) -> None:
         schema = load_schema_or_none(schema_name)
         if schema is None:
-            result.add_note(f"schema {schema_name!r} not found; skipped for {label}")
+            # v1.1.1: fail closed. A gate that *declares* a schema is asserting
+            # the artifact is machine-checkable; if the schema itself cannot be
+            # loaded we have no contract to enforce, and silently skipping would
+            # turn every declared schema into an advisory one. That is the same
+            # class of bug as `phase complete` trusting the agent's word.
+            result.add_failure(
+                "schema", label,
+                f"schema {schema_name!r} is declared but could not be loaded; "
+                f"cannot validate {label}",
+            )
             return
         errors = validate_instance(payload, schema)
         if errors:
@@ -414,7 +434,12 @@ class GateRunner:
                     else:
                         schema = load_schema_or_none(items_schema)
                         if schema is None:
-                            result.add_note(f"schema {items_schema!r} not found; skipped for {path}")
+                            # v1.1.1: fail closed (see _validate_schema).
+                            result.add_failure(
+                                "schema", path,
+                                f"items_schema {items_schema!r} is declared but could not "
+                                f"be loaded; cannot validate items of {path}",
+                            )
                         else:
                             for i, item in enumerate(items):
                                 errors = validate_instance(item, schema)
@@ -593,6 +618,230 @@ DEFAULT_PHASE_GATES: dict[str, dict[str, Any]] = {
             {"check": "audit_state_terminal_phases", "source": "mini-audit/audit-state.json"},
         ],
     },
+    # ------------------------------------------------------------------
+    # v1.1.1 §19 — gate coverage beyond balanced.
+    #
+    # Before v1.1.1 only balanced (L1–L7) declared gates, so `lite`, `deep`,
+    # `confirm`, `judge`, `longshot` and `knowledge-base` phases advanced on
+    # the agent's word alone — the exact failure mode §2 removed for balanced.
+    # The gates below cover every phase that the SKILL documents as writing a
+    # *dedicated* artifact file. Phases whose output is a section of a shared
+    # document (L2/L3/L4-style: P4–P7, P11) or that have no documented artifact
+    # contract (diff/revisit/merge/reinvest) are intentionally left ungated;
+    # see the "Gate coverage" table in SKILL.md for the rationale.
+    # ------------------------------------------------------------------
+    "Q0": {
+        "name": "Q0",
+        "required": [
+            {"path": "mini-audit/attack-surface/recon-report.md", "min_bytes": 100},
+            {"path": "mini-audit/attack-surface/candidates-summary.md", "min_bytes": 1},
+            {"path": "mini-audit/attack-surface/candidates.jsonl", "min_bytes": 1},
+        ],
+    },
+    "Q1": {
+        "name": "Q1",
+        "required": [
+            {"path": "mini-audit/attack-surface/lite-q1-summary.md", "min_bytes": 1},
+        ],
+    },
+    "Q2": {
+        "name": "Q2",
+        "required": [
+            {"path": "mini-audit/attack-surface/lite-q2-summary.md", "min_bytes": 1},
+            {"path": "mini-audit/attack-surface/unauthenticated-surface.md", "min_bytes": 1},
+        ],
+    },
+    "Q3": {
+        "name": "Q3",
+        "required": [
+            {"path": "mini-audit/attack-surface/lite-consolidation-manifest.json", "parse_json": True},
+        ],
+    },
+    "Q4": {
+        "name": "Q4",
+        "required": [
+            {"path": "mini-audit/attack-surface/lite-verification-summary.md", "min_bytes": 1},
+        ],
+    },
+    "P1": {
+        "name": "P1",
+        "required": [
+            {"path": "mini-audit/attack-surface/advisories.md", "min_bytes": 1},
+        ],
+    },
+    "P1.5": {
+        "name": "P1.5",
+        "required": [
+            {"path": "mini-audit/attack-surface/env-provisioning.md", "min_bytes": 1},
+        ],
+    },
+    "P2": {
+        "name": "P2",
+        "required": [
+            {"path": "mini-audit/attack-surface/intent-corpus.json", "parse_json": True},
+        ],
+        "semantic_checks": [
+            {"check": "non_empty", "source": "mini-audit/attack-surface/intent-corpus.json"},
+        ],
+    },
+    "P3": {
+        "name": "P3",
+        "required": [
+            {"path": "mini-audit/attack-surface/knowledge-base-report.md", "min_bytes": 100},
+        ],
+    },
+    "P8": {
+        "name": "P8",
+        "required_glob": [
+            {"pattern": "mini-audit/probe-workspace/*/probe-summary.md", "min_matches": 1},
+        ],
+    },
+    "P9": {
+        "name": "P9",
+        "required": [
+            {"path": "mini-audit/attack-surface/spec-gap.md", "min_bytes": 1},
+        ],
+    },
+    "P10": {
+        "name": "P10",
+        "required_glob": [
+            {
+                "pattern": "mini-audit/chamber-workspace/*/debate.json",
+                "parse_json": True,
+                "aggregate_as": "chambers",
+            },
+        ],
+        "semantic_checks": [
+            {"check": "every_chamber_closed", "source": "chambers"},
+            {"check": "every_valid_candidate_has_boundary_sentence", "source": "chambers"},
+        ],
+    },
+    "P12": {
+        "name": "P12",
+        "required": [
+            {"path": "mini-audit/attack-surface/variant-candidates.md", "min_bytes": 1},
+        ],
+    },
+    "P13": {
+        "name": "P13",
+        "required_glob": [
+            {"pattern": "mini-audit/findings/*/poc.*", "min_matches": 1},
+        ],
+    },
+    "P14": {
+        "name": "P14",
+        "required_glob": [
+            {"pattern": "mini-audit/findings/*/report.md", "min_matches": 1},
+        ],
+    },
+    "P15": {
+        "name": "P15",
+        "required": [
+            {"path": "mini-audit/final-audit-report.md", "min_bytes": 100},
+        ],
+    },
+    "P16": {
+        "name": "P16",
+        "required_glob": [
+            {"pattern": "mini-audit/findings/*/patch-bypass.md", "min_matches": 1},
+        ],
+    },
+    "P17": {
+        "name": "P17",
+        "required": [
+            {"path": "mini-audit/attack-surface/cleanup-manifest.json", "parse_json": True},
+        ],
+    },
+    "V1": {
+        "name": "V1",
+        "required": [
+            {"path": "mini-audit/confirm-workspace/findings-inventory.json", "parse_json": True},
+        ],
+    },
+    "V7": {
+        "name": "V7",
+        "required": [
+            {"path": "mini-audit/confirmation-report.md", "min_bytes": 100},
+        ],
+    },
+    "J1": {
+        "name": "J1",
+        "required_glob": [
+            {"pattern": "mini-audit/findings/*/judge-verdict.md", "min_matches": 1},
+        ],
+    },
+    "J2": {
+        "name": "J2",
+        "required": [
+            {"path": "mini-audit/judge-report.md", "min_bytes": 100},
+        ],
+    },
+    "X3": {
+        "name": "X3",
+        "required": [
+            {"path": "mini-audit/longshot/longshot-summary.md", "min_bytes": 1},
+        ],
+    },
+    "X1": {
+        "name": "X1",
+        "required": [
+            {"path": "mini-audit/longshot/targets.json", "parse_json": True},
+        ],
+    },
+    "X2": {
+        "name": "X2",
+        "required_glob": [
+            {"pattern": "mini-audit/longshot/findings-draft/longshot-*.md", "min_matches": 1},
+        ],
+    },
+    "R0": {
+        "name": "R0",
+        "required": [
+            {"path": "mini-audit/attack-surface/intent-corpus.json", "parse_json": True},
+        ],
+        "semantic_checks": [
+            {"check": "non_empty", "source": "mini-audit/attack-surface/intent-corpus.json"},
+        ],
+    },
+    "I2": {
+        "name": "I2",
+        "required_glob": [
+            {"pattern": "mini-audit/findings/*/wave-*-verdict.md", "min_matches": 1},
+        ],
+    },
+    "K1": {
+        "name": "K1",
+        "required": [
+            {"path": "mini-audit/attack-surface/sbom.json", "parse_json": True},
+        ],
+    },
+    "K2": {
+        "name": "K2",
+        "required": [
+            {"path": "mini-audit/attack-surface/knowledge-base-report.md", "min_bytes": 100},
+            {"path": "mini-audit/attack-surface/unauthenticated-surface.md", "min_bytes": 1},
+        ],
+    },
+}
+
+
+#: Canonical phase → mode map (SKILL §"Phase catalog"). Used by
+#: :func:`gated_phases` / :func:`ungated_phases` and by the docs check so the
+#: "every persisted phase is gated" claim stays verifiable.
+MODE_PHASES: dict[str, tuple[str, ...]] = {
+    "lite": ("Q0", "Q1", "Q2", "Q3", "Q4"),
+    "balanced": ("L1", "L2", "L3", "L4", "L5", "L6", "L6b", "L6c", "L7"),
+    "deep": (
+        "P1", "P1.5", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9",
+        "P10", "P11", "P12", "P13", "P14", "P15", "P16", "P17",
+    ),
+    "confirm": ("V1", "V1.5", "V2", "V3", "V4", "V5", "V6", "V7"),
+    "revisit": ("R0", "R5", "R7", "R8", "R9", "R10", "R10k", "R11", "R11b", "R11c"),
+    "merge": ("M1", "M2", "M3", "M4", "M5", "M6", "M7"),
+    "longshot": ("X1", "X2", "X3"),
+    "reinvest": ("I1", "I2", "I3"),
+    "knowledge-base": ("KB0", "K1", "K2"),
+    "judge": ("J1", "J2"),
 }
 
 
@@ -604,3 +853,20 @@ def gate_for(phase: str) -> GateDefinition:
 
 def has_gate(phase: str) -> bool:
     return phase in DEFAULT_PHASE_GATES
+
+
+def gated_phases(mode: Optional[str] = None) -> list[str]:
+    """Return the gated phases, optionally restricted to one *mode*."""
+    if mode is None:
+        return sorted(DEFAULT_PHASE_GATES)
+    return [p for p in MODE_PHASES.get(mode, ()) if p in DEFAULT_PHASE_GATES]
+
+
+def ungated_phases(mode: str) -> list[str]:
+    """Return phases declared by *mode* that have no deterministic gate.
+
+    v1.1.1 §19: these are deliberate — they either write into a shared
+    document (no dedicated artifact) or have no artifact contract at all.
+    The list exists so the gap is *named* rather than silently assumed away.
+    """
+    return [p for p in MODE_PHASES.get(mode, ()) if p not in DEFAULT_PHASE_GATES]

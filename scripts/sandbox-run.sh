@@ -25,6 +25,7 @@ set -euo pipefail
 
 KIND="poc"
 AUDIT_ROOT="${AUDIT_ROOT:-mini-audit}"
+REPO_ROOT="${REPO_ROOT:-}"
 TIMEOUT="300"
 DESCRIBE=0
 CMD=()
@@ -33,13 +34,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --kind)       KIND="${2:-}"; shift 2;;
     --audit-root) AUDIT_ROOT="${2:-}"; shift 2;;
+    --repo-root)  REPO_ROOT="${2:-}"; shift 2;;
     --timeout)    TIMEOUT="${2:-}"; shift 2;;
     --describe)   DESCRIBE=1; shift;;
     --)           shift; CMD=("$@"); break;;
     -h|--help)
       cat <<'EOF'
-Usage: sandbox-run.sh --kind KIND [--audit-root PATH] [--timeout SECONDS]
-                      [--describe] -- CMD...
+Usage: sandbox-run.sh --kind KIND [--audit-root PATH] [--repo-root PATH]
+                      [--timeout SECONDS] [--describe] -- CMD...
 EOF
       exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
@@ -71,9 +73,19 @@ if [[ ${#CMD[@]} -eq 0 ]]; then
   exit 2
 fi
 
+# NOTE: an empty array expanded as "${ARR[@]}" is an unbound-variable error under
+# `set -u` in bash 3.2 (the /bin/bash shipped with macOS), so the two shapes are
+# spelled out rather than conditionally spliced.
 set +e
-"$PYTHON_BIN" "$LAUNCHER" sandbox run \
-  --kind "$KIND" --audit-root "$AUDIT_ROOT" --timeout "$TIMEOUT" -- "${CMD[@]}"
+if [[ -n "$REPO_ROOT" ]]; then
+  "$PYTHON_BIN" "$LAUNCHER" sandbox run \
+    --kind "$KIND" --audit-root "$AUDIT_ROOT" --repo-root "$REPO_ROOT" \
+    --timeout "$TIMEOUT" -- "${CMD[@]}"
+else
+  "$PYTHON_BIN" "$LAUNCHER" sandbox run \
+    --kind "$KIND" --audit-root "$AUDIT_ROOT" \
+    --timeout "$TIMEOUT" -- "${CMD[@]}"
+fi
 rc=$?
 set -e
 

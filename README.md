@@ -21,6 +21,13 @@ Originally developed for internal use by the [lannister](https://github.com/Rinn
 
 Plus confirm (`V1-V7`), revisit (`R0-R11c`), merge (`M1-M7`), longshot (`X1-X3`) and incident (`I1-I3`) extensions.
 
+Across those modes, **38 phases declare a deterministic gate**: a phase only
+reaches `complete` when its required artifact exists on disk, parses, passes
+schema validation and satisfies its semantic checks. The phases that are *not*
+gated are listed explicitly in SKILL.md § Gate coverage — they either write
+into a shared document or have no artifact contract, so gating them would block
+legitimate completion rather than enforce anything real.
+
 ## Repository layout
 
 ```
@@ -29,8 +36,10 @@ _meta.json                            # Mavis skill metadata
 README.md                             # this file
 runtime/                              # deterministic layer (Python 3.9+, stdlib-only)
   state.py gates.py schema.py coverage.py findings.py scheduler.py
-  sandbox.py source_identity.py diff_scope.py sarif.py export.py fingerprint.py cli.py
+  sandbox.py sandbox_backend.py source_identity.py diff_scope.py sarif.py export.py
+  fingerprint.py atomic_io.py cli.py
 schemas/                              # JSON Schema for audit-state / finding / coverage / candidate / phase-result
+.github/workflows/ci.yml              # the checks below, run on every push / PR
 scripts/
   mini-audit-runtime                  # CLI launcher
   manifest.py                         # generate references/MANIFEST.json (with provenance)
@@ -83,16 +92,37 @@ Sources that are not vendored (`Claude-BugHunter`, `strix`) currently carry an
 | runtime wordlists | 5 |
 | eval fixtures | 30 |
 | first-class roles | 7 |
-| runtime version | 1.1.0 |
+| phase gates declared | 38 |
+| runtime version | 1.1.1 |
 | commands: full / partial / stub | 8 / 5 / 4 |
 <!-- END auto-counts -->
 
 Refresh with `python scripts/doc_counts.py --write`; CI runs
 `python scripts/doc_counts.py --check`.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the repo's own verification commands on every
+push to `main` and every pull request:
+
+- `python -m pytest tests/unit -q` on Python 3.9 and 3.13 (the advertised
+  support range)
+- `python scripts/check-manifest.py --strict` (manifest ↔ disk + provenance)
+- `python scripts/doc_counts.py --check` (counts quoted in the docs)
+- `python evals/run.py --self-check` (eval corpus structure)
+- `bash -n` over `scripts/*.sh` and `compileall` over the Python sources
+
+A second job (`sandbox-containment`) stages `alpine:3.20` and runs the live
+Docker containment tests, because the isolation claim is only worth what a
+running canary proves — a unit test asserting the argv is shaped correctly does
+not show that a write is actually blocked. Those tests need no egress: the
+network canary stands up its own listener on the host's routable address, so
+"the sandbox blocked the network" is measured rather than assumed from a public
+endpoint being reachable.
+
 ## License
 
-This is a **private** repository. The mini-audit code itself ships no license file.
+This is a **public** repository. The mini-audit code itself ships no license file.
 Bundled reference material retains the license of its upstream source (see the
 `license` field on each item in `references/MANIFEST.json`; Piolium-derived files
 are MIT).

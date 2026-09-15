@@ -223,6 +223,165 @@ def test_cli_coverage_init_and_validate(tmp_path: Path) -> None:
     assert "billing|tenant|idor" in out["unresolved"]
 
 
+def _write_l7_artifacts(tmp_path: Path, *, extra_phases: dict | None = None) -> None:
+    """Materialise everything the L7 gate requires, plus a realistic state.
+
+    ``extra_phases`` lets a test declare sibling phases (e.g. L1..L6c complete)
+    so the terminality check has something to actually check.
+    """
+    audit = tmp_path / "mini-audit"
+    audit.mkdir(parents=True, exist_ok=True)
+    (audit / "findings.json").write_text(
+        json.dumps({"schema_version": 1, "audit_id": "a", "findings": [_confirmed()]}),
+        encoding="utf-8",
+    )
+    (audit / "final-audit-report.md").write_text(
+        "# report\n" + "content " * 30, encoding="utf-8"
+    )
+    (audit / "coverage-ledger.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "audit_id": "a",
+            "planning_status": "complete",
+            "units": [{
+                "id": "a|b|c", "subsystem": "a", "boundary": "b",
+                "attack_class": "c", "status": "covered",
+            }],
+        }),
+        encoding="utf-8",
+    )
+    phases = {"L7": {"name": "L7", "status": "in_progress"}}
+    phases.update(extra_phases or {})
+    (audit / "audit-state.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "audit_id": "a",
+            "mode": "balanced",
+            "status": "in_progress",
+            "source": {"root": "/repo", "commit": "abc", "tree_hash": "t"},
+            "runtime": {"version": "1.1.0"},
+            "phases": phases,
+            "started_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+        }),
+        encoding="utf-8",
+    )
+
+
+def test_cli_l7_can_complete_when_siblings_are_terminal(tmp_path: Path) -> None:
+    """Regression: L7 must not deadlock against its own terminality check.
+
+    `phase complete L7` runs L7's gate, and that gate asserts every *other*
+    phase is terminal. Before the fix the CLI put L7 itself into
+    `required_phases` while L7 was still `in_progress`, so the gate failed
+    against L7 unconditionally and L7 could never become `complete`.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_cli("state", "init", "--repo-root", str(repo), "--audit-root", "mini-audit",
+             cwd=tmp_path)
+    _write_l7_artifacts(tmp_path, extra_phases={
+        name: {"name": name, "status": "complete"} for name in ("L1", "L2", "L6", "L6b", "L6c")
+    })
+
+    r = _run_cli("phase", "complete", "L7", "--audit-root", "mini-audit",
+                 "--workdir", str(tmp_path), cwd=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    out = json.loads(r.stdout)
+    assert out["gate"]["passed"] is True, out["gate"]["failures"]
+    assert out["status"] == "complete"
+
+
+def test_cli_l7_completes_when_it_is_the_only_phase(tmp_path: Path) -> None:
+    """`state init` declares no phases, so completing L7 leaves no siblings.
+
+    An empty `required_phases` must mean "nothing else to require", not
+    "fall back to requiring every declared phase" (which would re-include L7).
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_cli("state", "init", "--repo-root", str(repo), "--audit-root", "mini-audit",
+             cwd=tmp_path)
+    _write_l7_artifacts(tmp_path)  # only L7 exists, and it is in_progress
+
+    r = _run_cli("phase", "complete", "L7", "--audit-root", "mini-audit",
+                 "--workdir", str(tmp_path), cwd=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert json.loads(r.stdout)["gate"]["passed"] is True
+
+
+def test_cli_l7_still_blocked_by_a_genuinely_non_terminal_phase(tmp_path: Path) -> None:
+    """The fix must not weaken the check: a real sibling in progress still blocks."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_cli("state", "init", "--repo-root", str(repo), "--audit-root", "mini-audit",
+             cwd=tmp_path)
+    _write_l7_artifacts(tmp_path, extra_phases={
+        "L1": {"name": "L1", "status": "complete"},
+        "L6": {"name": "L6", "status": "in_progress"},
+    })
+
+    r = _run_cli("phase", "complete", "L7", "--audit-root", "mini-audit",
+                 "--workdir", str(tmp_path), cwd=tmp_path)
+    assert r.returncode == 1, r.stdout + r.stderr
+    out = json.loads(r.stdout)
+    assert out["gate"]["passed"] is False
+    assert any("non-terminal" in f["message"] for f in out["gate"]["failures"])
+    assert any("L6" in f["message"] for f in out["gate"]["failures"])
+    # L7 itself must never be reported as the offender.
+    assert not any("L7" in f["message"] for f in out["gate"]["failures"])
+
+
+def test_cli_lite_phase_is_gated_v1_1_1(tmp_path: Path) -> None:
+    """v1.1.1 §19: lite phases now run a gate instead of trusting the agent.
+
+    Before v1.1.1 only balanced phases declared gates, so `phase complete Q0`
+    advanced state with an empty workspace.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_cli("state", "init", "--repo-root", str(repo), "--audit-root", "mini-audit",
+             "--mode", "lite", cwd=tmp_path)
+    _run_cli("phase", "start", "Q0", "--audit-root", "mini-audit", cwd=tmp_path)
+
+    blocked = _run_cli("phase", "complete", "Q0", "--audit-root", "mini-audit",
+                       "--workdir", str(tmp_path), cwd=tmp_path)
+    assert blocked.returncode == 1, blocked.stdout + blocked.stderr
+    out = json.loads(blocked.stdout)
+    assert out["gate"]["passed"] is False
+
+    surface = tmp_path / "mini-audit" / "attack-surface"
+    surface.mkdir(parents=True, exist_ok=True)
+    (surface / "recon-report.md").write_text("# recon\n" + "x " * 100, encoding="utf-8")
+    (surface / "candidates-summary.md").write_text("summary", encoding="utf-8")
+    (surface / "candidates.jsonl").write_text('{"id":"c1"}\n', encoding="utf-8")
+
+    # The failed gate parked Q0 in `failed`; a fresh attempt needs --reset.
+    _run_cli("phase", "start", "Q0", "--reset", "--audit-root", "mini-audit", cwd=tmp_path)
+    ok = _run_cli("phase", "complete", "Q0", "--audit-root", "mini-audit",
+                  "--workdir", str(tmp_path), cwd=tmp_path)
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert json.loads(ok.stdout)["gate"]["passed"] is True
+
+
+def test_cli_ungated_phase_still_completes_without_a_gate(tmp_path: Path) -> None:
+    """Phases with no documented artifact contract must keep working.
+
+    Guards the boundary the other way: adding gates for the phases that
+    *have* contracts must not accidentally gate the ones that do not
+    (e.g. deep P4, which writes sections into a shared document).
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_cli("state", "init", "--repo-root", str(repo), "--audit-root", "mini-audit",
+             "--mode", "deep", cwd=tmp_path)
+    _run_cli("phase", "start", "P4", "--audit-root", "mini-audit", cwd=tmp_path)
+    r = _run_cli("phase", "complete", "P4", "--audit-root", "mini-audit",
+                 "--workdir", str(tmp_path), cwd=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert json.loads(r.stdout)["gate"]["passed"] is True
+
+
 def test_cli_sarif_normalize(tmp_path: Path) -> None:
     sarif = {
         "$schema": "https://example.com/sarif.json",

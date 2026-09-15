@@ -97,6 +97,24 @@ def runtime_version(root: Path) -> str:
     return m.group(1) if m else "UNKNOWN"
 
 
+def gate_metrics(root: Path) -> dict:
+    """Derive gate coverage from the runtime, never from prose (v1.1.1 §19).
+
+    The v1.1 review flagged "every phase is gated" as an unverifiable claim.
+    Importing the gate table makes the claim checkable in the same pass as
+    every other count.
+    """
+    entry = str(root)
+    if entry not in sys.path:
+        sys.path.insert(0, entry)
+    try:
+        from runtime import gates  # noqa: PLC0415  (late import; needs root on path)
+        return {"phase_gates": len(gates.DEFAULT_PHASE_GATES)}
+    finally:
+        if entry in sys.path:
+            sys.path.remove(entry)
+
+
 def _table_rows_after(text: str, heading: str) -> list[str]:
     """Return markdown table rows appearing after `heading` until a blank line."""
     idx = text.find(heading)
@@ -143,6 +161,7 @@ def collect_metrics(root: Path) -> dict:
     metrics.update(eval_metrics(root))
     metrics.update(role_metrics(root))
     metrics.update(command_metrics(root))
+    metrics.update(gate_metrics(root))
     metrics["unit_tests"] = unit_test_count(root)
     metrics["runtime_version"] = runtime_version(root)
     return metrics
@@ -162,6 +181,7 @@ BLOCK_ROWS = (
     ("runtime wordlists", "wordlist_files"),
     ("eval fixtures", "eval_fixtures"),
     ("first-class roles", "first_class_roles"),
+    ("phase gates declared", "phase_gates"),
     ("runtime version", "runtime_version"),
 )
 # NOTE: the unit-test count is deliberately NOT emitted into docs — it changes
@@ -250,9 +270,15 @@ def prose_claims(root: Path, metrics: dict) -> list[tuple[str, str, int, int]]:
     check("SKILL.md", skill,
           r"first-class roles \+ (\d+) inline-dispatched roles", "inline_agents",
           "agent mapping inline count")
+    check("SKILL.md", skill,
+          r"Gate coverage:\s*(\d+)\s+phases declare a deterministic gate",
+          "phase_gates", "phase gate count")
 
     check("README.md", readme, r"vuln-classes/\s*#\s*(\d+)\s+per-vuln-class",
           "vuln_class_files", "vuln-class playbook count")
+    check("README.md", readme,
+          r"(\d+)\s+phases declare a deterministic gate",
+          "phase_gates", "phase gate count")
 
     check("references/README.md", refs_readme, r"(\d+) first-class mavis agents",
           "first_class_roles", "first-class agent count")

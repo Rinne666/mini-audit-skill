@@ -73,8 +73,120 @@ def _fake_semgrep(
     return fake
 
 
+_STUB_LAUNCHER_SOURCE = '''"""TEST SEAM — installed by tests/unit/test_scripts.py.
+
+Stands in for `mini-audit-runtime` so the scanner wrappers can be exercised
+without a live isolation backend. It is a Python file because the wrappers
+invoke the launcher as `python3 <launcher> ...`, and it honours the runtime's
+documented CLI output shape (`sandbox.check` / `sandbox.run` JSON) so the
+wrappers' parsing is still under test.
+
+It implements the ALLOWED path only. Policy enforcement is deliberately not
+tested through this stub — see tests/unit/test_sandbox.py,
+tests/unit/test_sandbox_backend.py, and the live containment tests.
+"""
+import json
+import os
+import subprocess
+import sys
+
+
+def _flag(argv: list, name: str, default=None):
+    if name in argv:
+        i = argv.index(name)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return default
+
+
+def _decision(kind: str) -> dict:
+    return {
+        "ok": True,
+        "kind": kind,
+        "execution_status": "allowed",
+        "verdict": None,
+        "reason": "stub: policy replaced by the test seam",
+        "missing_critical": [],
+        "warnings": [],
+        "checks": {},
+        "probe_present": True,
+        "probe_path": None,
+        "isolation_backend": "stub",
+        "isolation_verified": True,
+        "controls": {},
+        "host_fallback": False,
+        "hard_timeout_enforced_by_runtime": True,
+    }
+
+
+def _emit(payload: dict) -> None:
+    sys.stdout.write(json.dumps(payload) + "\\n")
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    if not (argv and argv[0] == "sandbox"):
+        _emit({"ok": True, "command": "stub"})
+        return int(os.environ.get("STUB_EXIT", "0"))
+
+    argv = argv[1:]
+    action = argv[0] if argv else ""
+    kind = _flag(argv, "--kind", "poc")
+
+    if action == "check":
+        _emit({"ok": True, "command": "sandbox.check", **_decision(kind)})
+        return 0
+
+    if action == "run":
+        rest = argv[1:]
+        if "--" not in rest:
+            return 2
+        cmd = rest[rest.index("--") + 1:]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        _emit({
+            "ok": proc.returncode == 0,
+            "executed": True,
+            "command": "sandbox.run",
+            "sandbox": _decision(kind),
+            "outcome": {
+                "returncode": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+                "timed_out": False,
+                "terminated_for_real": True,
+                "elapsed_seconds": 0.0,
+            },
+        })
+        return 0 if proc.returncode == 0 else 1
+
+    _emit({"ok": True, "command": "sandbox.probe"})
+    return int(os.environ.get("STUB_EXIT", "0"))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def _install_stub_launcher(directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    stub = directory / "mini-audit-runtime"
+    stub.write_text(_STUB_LAUNCHER_SOURCE, encoding="utf-8")
+    stub.chmod(0o755)
+    return stub
+
+
 def _fake_env(fake_bin: Path) -> dict:
-    return {"PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH','')}"}
+    stub = _install_stub_launcher(fake_bin)
+    return {
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH','')}",
+        "MINI_AUDIT_RUNTIME": str(stub),
+    }
+
+
+def _stub_launcher(tmp_path: Path, *, exit_code_env: str = "STUB_EXIT") -> Path:
+    """A launcher stub; it exits with $STUB_EXIT (default 0) for `sandbox probe`."""
+    return _install_stub_launcher(tmp_path / "stubbin")
 
 
 def _fake_codeql(
@@ -174,72 +286,93 @@ def test_detect_tools_missing_tool_is_not_fatal(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_sandbox_check_writes_probe_and_exits(tmp_path: Path) -> None:
-    """v1.0 crashed with NameError: sys on the exit-code path."""
-    result = _bash(SCRIPTS / "sandbox-check.sh", "--audit-root", "mini-audit", cwd=tmp_path)
-    assert "NameError" not in (result.stderr + result.stdout)
-    assert "NameError" not in result.stderr
+def test_sandbox_check_delegates_and_propagates_the_verdict(tmp_path: Path) -> None:
+    """sandbox-check.sh delegates to `sandbox probe` and reports its verdict.
 
-    probe_path = tmp_path / "mini-audit" / "sandbox" / "probe.json"
-    assert probe_path.exists()
-    probe = json.loads(probe_path.read_text(encoding="utf-8"))
-    assert probe["schema_version"] == 1
-    assert probe["verdict"] in ("ok", "blocked")
-    for key in ("sandbox_available", "external_network_disabled",
-                "safe_writable_scratch", "timeout_available",
-                "resource_limit_available", "environment_sanitized"):
-        assert key in probe["checks"]
+    v1.1 computed a verdict from environment variables. The probe now runs real
+    canaries (runtime/sandbox_backend.py), so this asserts the shell contract:
+    delegate, write nothing of its own, propagate the exit code.
+    """
+    launcher = _stub_launcher(tmp_path)
 
-    # Exit code agrees with the verdict.
-    if probe["missing_critical"]:
-        assert result.returncode == 1
-    else:
-        assert result.returncode == 0
+    ok = _bash(SCRIPTS / "sandbox-check.sh", "--audit-root", "mini-audit",
+               cwd=tmp_path, env={"MINI_AUDIT_RUNTIME": str(launcher)})
+    assert ok.returncode == 0, ok.stderr + ok.stdout
+
+    blocked = _bash(SCRIPTS / "sandbox-check.sh", "--audit-root", "mini-audit",
+                    cwd=tmp_path,
+                    env={"MINI_AUDIT_RUNTIME": str(launcher), "STUB_EXIT": "1"})
+    assert blocked.returncode == 1, blocked.stderr + blocked.stdout
 
 
-def test_sandbox_check_reports_sandbox_available_when_env_set(tmp_path: Path) -> None:
-    result = _bash(SCRIPTS / "sandbox-check.sh", "--audit-root", "mini-audit",
-                   cwd=tmp_path, env={"MINI_AUDIT_SANDBOX": "1"})
-    probe = json.loads((tmp_path / "mini-audit" / "sandbox" / "probe.json").read_text(encoding="utf-8"))
-    assert probe["checks"]["sandbox_available"] is True
+def test_sandbox_check_ignores_declared_capability_env(tmp_path: Path) -> None:
+    """v1.1.1 regression: `MINI_AUDIT_SANDBOX=1` must no longer mean "sandboxed".
 
-
-def test_sandbox_check_strict_fails_on_warnings(tmp_path: Path) -> None:
-    # With no sandbox env vars at all, there will be warnings.
-    result = _bash(SCRIPTS / "sandbox-check.sh", "--strict", "--audit-root", "mini-audit",
-                   cwd=tmp_path, env={"MINI_AUDIT_SANDBOX": "1", "MINI_AUDIT_NO_NET": "1",
-                                      "MINI_AUDIT_SANITIZED": "1"})
-    # Either it is ok (all warnings gone) or it failed because of warnings.
-    probe = json.loads((tmp_path / "mini-audit" / "sandbox" / "probe.json").read_text(encoding="utf-8"))
-    if probe["warnings"]:
-        assert result.returncode == 1
-    else:
-        assert result.returncode == 0
+    That variable was the whole basis of the old probe — anyone could set it and
+    the runtime would run target-controlled code believing it was contained.
+    """
+    launcher = _stub_launcher(tmp_path)
+    result = _bash(
+        SCRIPTS / "sandbox-check.sh", "--audit-root", "mini-audit", cwd=tmp_path,
+        env={
+            "MINI_AUDIT_RUNTIME": str(launcher),
+            "MINI_AUDIT_SANDBOX": "1",
+            "MINI_AUDIT_NO_NET": "1",
+            "MINI_AUDIT_SANITIZED": "1",
+            "STUB_EXIT": "1",   # the runtime says "no backend"
+        },
+    )
+    assert result.returncode == 1, (
+        "declared capabilities must not override the runtime's verdict"
+    )
 
 
 def test_sandbox_check_help(tmp_path: Path) -> None:
     assert _bash(SCRIPTS / "sandbox-check.sh", "--help", cwd=tmp_path).returncode == 0
 
 
+def test_sandbox_check_rejects_unknown_arg(tmp_path: Path) -> None:
+    assert _bash(SCRIPTS / "sandbox-check.sh", "--nope", cwd=tmp_path).returncode == 2
+
+
+@pytest.mark.skipif(
+    not any(b.name == "docker" and b.available() for b in __import__(
+        "runtime.sandbox_backend", fromlist=["BACKENDS"]).BACKENDS),
+    reason="no usable isolation backend on this host",
+)
+def test_sandbox_check_end_to_end_writes_a_verified_probe(tmp_path: Path) -> None:
+    """Live: the script produces a schema-v2 probe carrying demonstrated controls."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_text("x=1\n", encoding="utf-8")
+    audit_root = tmp_path / "mini-audit"
+
+    result = _bash(
+        SCRIPTS / "sandbox-check.sh",
+        "--audit-root", str(audit_root),
+        "--repo-root", str(repo),
+        "--kind", "source-scan",
+        cwd=tmp_path,
+    )
+    probe_path = audit_root / "sandbox" / "probe.json"
+    assert probe_path.exists(), result.stderr + result.stdout
+    probe = json.loads(probe_path.read_text(encoding="utf-8"))
+    assert probe["schema_version"] == 2
+    assert isinstance(probe["backends"], list) and probe["backends"]
+    usable = [b for b in probe["backends"] if b.get("usable")]
+    assert usable, "at least one backend should be usable on this host"
+    assert result.returncode == 0, result.stderr + result.stdout
+    # Every control claim must come with evidence, not just a boolean.
+    assert any(b.get("evidence") for b in usable)
+
+
 # ---------------------------------------------------------------------------
 # run-semgrep.sh / run-codeql.sh
+#
+# These wrappers sit on top of the sandbox policy. The policy is stubbed here
+# (see _fake_env / _STUB_LAUNCHER) so each test isolates the wrapper's own
+# behaviour; policy enforcement has its own suites.
 # ---------------------------------------------------------------------------
-
-
-def _write_permissive_probe(audit_root: Path) -> None:
-    """Grant every capability so policy gating does not mask the assertion."""
-    (audit_root / "sandbox").mkdir(parents=True, exist_ok=True)
-    (audit_root / "sandbox" / "probe.json").write_text(json.dumps({
-        "schema_version": 1,
-        "checks": {
-            "sandbox_available": True,
-            "external_network_disabled": True,
-            "safe_writable_scratch": True,
-            "timeout_available": True,
-            "resource_limit_available": True,
-            "environment_sanitized": True,
-        },
-    }), encoding="utf-8")
 
 
 def test_run_semgrep_passes_each_config_separately(tmp_path: Path) -> None:
@@ -251,7 +384,6 @@ def test_run_semgrep_passes_each_config_separately(tmp_path: Path) -> None:
     audit_root = tmp_path / "mini-audit"
     # Hardening v1.1 §8: scanning is gated by the sandbox policy, so the probe
     # must exist (and pass) before any scanner runs.
-    _write_permissive_probe(audit_root)
 
     env = _fake_env(fake_bin)
     result = _bash(
@@ -284,7 +416,6 @@ def test_run_semgrep_does_not_pass_error_flag(tmp_path: Path) -> None:
     record = tmp_path / "argv.txt"
     _fake_semgrep(fake_bin, record)
     audit_root = tmp_path / "mini-audit"
-    _write_permissive_probe(audit_root)
 
     result = _bash(
         SCRIPTS / "run-semgrep.sh",
@@ -309,7 +440,6 @@ def test_run_semgrep_default_output_respects_audit_root(tmp_path: Path) -> None:
     record = tmp_path / "argv.txt"
     _fake_semgrep(fake_bin, record)
     audit_root = tmp_path / "custom-audit"
-    _write_permissive_probe(audit_root)
 
     result = _bash(
         SCRIPTS / "run-semgrep.sh",
@@ -331,7 +461,6 @@ def test_run_semgrep_fails_when_no_sarif_is_written(tmp_path: Path) -> None:
     record = tmp_path / "argv.txt"
     _fake_semgrep(fake_bin, record, write_output=False)
     audit_root = tmp_path / "mini-audit"
-    _write_permissive_probe(audit_root)
 
     result = _bash(
         SCRIPTS / "run-semgrep.sh",
@@ -349,7 +478,6 @@ def test_run_semgrep_reports_scanner_error(tmp_path: Path) -> None:
     record = tmp_path / "argv.txt"
     _fake_semgrep(fake_bin, record, exit_code=7)
     audit_root = tmp_path / "mini-audit"
-    _write_permissive_probe(audit_root)
 
     result = _bash(
         SCRIPTS / "run-semgrep.sh",
@@ -389,7 +517,6 @@ def test_run_semgrep_consumes_findings_from_sarif(tmp_path: Path) -> None:
     }
     _fake_semgrep(fake_bin, record, payload=sarif_doc)
     audit_root = tmp_path / "mini-audit"
-    _write_permissive_probe(audit_root)
 
     result = _bash(
         SCRIPTS / "run-semgrep.sh",
@@ -408,11 +535,15 @@ def test_run_semgrep_consumes_findings_from_sarif(tmp_path: Path) -> None:
 
 
 def test_run_semgrep_is_blocked_without_a_probe(tmp_path: Path) -> None:
-    """Fail-closed: no probe means we do not know the capabilities, so no run."""
+    """Fail-closed: no probe means no verified backend, so nothing runs.
+
+    This one deliberately uses the REAL launcher (no MINI_AUDIT_RUNTIME stub),
+    because it is asserting the policy's behaviour, not the wrapper's.
+    """
     fake_bin = tmp_path / "bin"
     record = tmp_path / "argv.txt"
     _fake_semgrep(fake_bin, record)
-    env = _fake_env(fake_bin)
+    env = {"PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH','')}"}
     result = _bash(
         SCRIPTS / "run-semgrep.sh",
         "--repo-root", str(tmp_path / "repo"),
@@ -423,12 +554,42 @@ def test_run_semgrep_is_blocked_without_a_probe(tmp_path: Path) -> None:
     assert not record.exists(), "semgrep must not have been invoked"
 
 
+def test_run_semgrep_blocks_a_legacy_capability_only_probe(tmp_path: Path) -> None:
+    """v1.1.1: a probe that only *declares* capabilities grants nothing.
+
+    The old probe format answered "is there a sandbox?" from environment
+    variables. Feeding the runtime that document must not open the gate — the
+    command still must not run.
+    """
+    fake_bin = tmp_path / "bin"
+    record = tmp_path / "argv.txt"
+    _fake_semgrep(fake_bin, record)
+    audit_root = tmp_path / "mini-audit"
+    (audit_root / "sandbox").mkdir(parents=True, exist_ok=True)
+    (audit_root / "sandbox" / "probe.json").write_text(json.dumps({
+        "schema_version": 1,
+        "checks": {k: True for k in (
+            "sandbox_available", "external_network_disabled", "safe_writable_scratch",
+            "timeout_available", "resource_limit_available", "environment_sanitized",
+        )},
+    }), encoding="utf-8")
+
+    env = {"PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH','')}"}
+    result = _bash(
+        SCRIPTS / "run-semgrep.sh",
+        "--repo-root", str(tmp_path / "repo"),
+        "--audit-root", str(audit_root),
+        cwd=tmp_path, env=env,
+    )
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert not record.exists(), "a declared capability is not a verified backend"
+
+
 def test_run_semgrep_custom_configs(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     record = tmp_path / "argv.txt"
     _fake_semgrep(fake_bin, record)
     audit_root = tmp_path / "mini-audit"
-    _write_permissive_probe(audit_root)
     env = _fake_env(fake_bin)
     _bash(SCRIPTS / "run-semgrep.sh", "--repo-root", str(tmp_path), "--config", "p/ci",
           "--config", "p/secrets", "--config", "p/trailofbits",
@@ -458,6 +619,59 @@ def test_run_semgrep_requires_repo_root(tmp_path: Path) -> None:
     result = _bash(SCRIPTS / "run-semgrep.sh", cwd=tmp_path)
     assert result.returncode == 2
     assert "--repo-root is required" in result.stderr
+
+
+def test_run_semgrep_has_no_host_fallback_without_policy_wrapper(tmp_path: Path) -> None:
+    """v1.1.1: a missing sandbox-run.sh must fail closed, never run on the host.
+
+    The wrapper used to `echo "warning: ..."` and then exec semgrep directly,
+    which silently contradicted the documented "never fall back to host
+    execution" guarantee. Run the wrapper from an isolated directory so no
+    sibling sandbox-run.sh exists.
+    """
+    isolated = tmp_path / "scripts"
+    isolated.mkdir()
+    shutil.copy2(SCRIPTS / "run-semgrep.sh", isolated / "run-semgrep.sh")
+    assert not (isolated / "sandbox-run.sh").exists()
+
+    fake_bin = tmp_path / "bin"
+    record = tmp_path / "argv.txt"
+    _fake_semgrep(fake_bin, record)
+    audit_root = tmp_path / "mini-audit"
+    # Grant every capability: the refusal must come from the missing wrapper,
+    # not from the policy.
+
+    result = _bash(
+        isolated / "run-semgrep.sh",
+        "--repo-root", str(tmp_path / "repo"),
+        "--audit-root", str(audit_root),
+        cwd=tmp_path, env=_fake_env(fake_bin),
+    )
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "refusing to run semgrep" in result.stderr
+    assert not record.exists(), "semgrep must never run without the policy wrapper"
+
+
+def test_run_codeql_has_no_host_fallback_without_policy_wrapper(tmp_path: Path) -> None:
+    """Same contract as run-semgrep.sh: missing wrapper ⇒ exit 4, nothing runs."""
+    isolated = tmp_path / "scripts"
+    isolated.mkdir()
+    shutil.copy2(SCRIPTS / "run-codeql.sh", isolated / "run-codeql.sh")
+
+    fake_bin = tmp_path / "bin"
+    record = tmp_path / "argv.txt"
+    _fake_codeql(fake_bin, record)
+    audit_root = tmp_path / "mini-audit"
+
+    result = _bash(
+        isolated / "run-codeql.sh",
+        "--repo-root", str(tmp_path / "repo"),
+        "--language", "python",
+        "--audit-root", str(audit_root),
+        cwd=tmp_path, env=_fake_env(fake_bin),
+    )
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert not record.exists(), "codeql must never run without the policy wrapper"
 
 
 def test_run_codeql_blocks_when_sandbox_unavailable(tmp_path: Path) -> None:
@@ -494,7 +708,6 @@ def test_run_codeql_writes_sarif_and_confirms_it(tmp_path: Path) -> None:
     record = tmp_path / "argv.txt"
     _fake_codeql(fake_bin, record)
     audit_root = tmp_path / "custom-audit"
-    _write_permissive_probe(audit_root)
 
     result = _bash(
         SCRIPTS / "run-codeql.sh",
@@ -526,7 +739,6 @@ def test_run_codeql_reports_failure_instead_of_dying_mute(tmp_path: Path) -> Non
     record = tmp_path / "argv.txt"
     _fake_codeql(fake_bin, record, analyze_exit=9)
     audit_root = tmp_path / "mini-audit"
-    _write_permissive_probe(audit_root)
 
     result = _bash(
         SCRIPTS / "run-codeql.sh",
@@ -545,7 +757,6 @@ def test_run_codeql_fails_when_sarif_missing(tmp_path: Path) -> None:
     record = tmp_path / "argv.txt"
     _fake_codeql(fake_bin, record, write_output=False)
     audit_root = tmp_path / "mini-audit"
-    _write_permissive_probe(audit_root)
 
     result = _bash(
         SCRIPTS / "run-codeql.sh",
@@ -587,29 +798,35 @@ def test_sandbox_run_uses_runtime_decision(tmp_path: Path) -> None:
     assert not sentinel.exists(), "blocked command must not have run"
 
 
-def test_sandbox_run_executes_when_policy_allows(tmp_path: Path) -> None:
-    import runtime.sandbox as rt_sandbox  # noqa: F401  (path sanity)
+def test_sandbox_run_executes_when_the_runtime_allows(tmp_path: Path) -> None:
+    """Adapter plumbing: a runtime "yes" must actually execute the command.
 
-    audit_root = tmp_path / "mini-audit"
-    (audit_root / "sandbox").mkdir(parents=True)
-    (audit_root / "sandbox" / "probe.json").write_text(json.dumps({
-        "schema_version": 1,
-        "checks": {
-            "sandbox_available": True,
-            "external_network_disabled": True,
-            "safe_writable_scratch": True,
-            "timeout_available": False,
-            "resource_limit_available": True,
-            "environment_sanitized": True,
-        },
-    }), encoding="utf-8")
+    The runtime is stubbed so this exercises `sandbox-run.sh`'s own argument
+    handling and exit-code mapping; real policy outcomes are covered by
+    tests/unit/test_sandbox.py.
+    """
+    launcher = _stub_launcher(tmp_path)
     sentinel = tmp_path / "ran.txt"
     result = _bash(SCRIPTS / "sandbox-run.sh", "--kind", "poc",
-                   "--audit-root", str(audit_root), "--timeout", "20",
+                   "--audit-root", str(tmp_path / "mini-audit"), "--timeout", "20",
                    "--", "bash", "-c", f"echo ran > {sentinel}",
-                   cwd=tmp_path)
+                   cwd=tmp_path, env={"MINI_AUDIT_RUNTIME": str(launcher)})
     assert result.returncode == 0, result.stdout + result.stderr
     assert sentinel.exists()
+
+
+def test_sandbox_run_maps_a_runtime_failure_to_exit_1(tmp_path: Path) -> None:
+    """A command that runs but fails is exit 1; a policy block is exit 4.
+
+    sandbox-run.sh distinguishes them by re-asking the policy after the failure,
+    so those two states must not collapse into one exit code.
+    """
+    launcher = _stub_launcher(tmp_path)
+    result = _bash(SCRIPTS / "sandbox-run.sh", "--kind", "poc",
+                   "--audit-root", str(tmp_path / "mini-audit"),
+                   "--", "bash", "-c", "exit 7",
+                   cwd=tmp_path, env={"MINI_AUDIT_RUNTIME": str(launcher)})
+    assert result.returncode == 1, result.stdout + result.stderr
 
 
 def test_sandbox_run_without_command_is_usage_error(tmp_path: Path) -> None:
