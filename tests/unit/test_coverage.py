@@ -96,9 +96,70 @@ def test_unresolved_units_blocks_completion() -> None:
     ledger.transition("billing|tenant-isolation|idor", to=UNIT_IN_PROGRESS)
     ledger.transition("billing|tenant-isolation|idor", to=UNIT_COVERED)
     ledger.transition("auth|session|session_fixation", to=UNIT_OUT_OF_SCOPE)
+    ledger.finalize_planning()  # Hardening v1.1 §9 — planning must complete
     ok, unresolved = ledger.audit_complete_ok()
     assert ok is True
     assert unresolved == []
+
+
+def test_empty_plan_cannot_complete() -> None:
+    """Hardening v1.1 §9 — {"units": []} must never satisfy the final gate."""
+    ledger = CoverageLedger.empty(audit_id="t")
+    ok, unresolved = ledger.audit_complete_ok()
+    assert ok is False
+    assert unresolved == []
+    report = ledger.completeness_report()
+    assert report["unit_count"] == 0
+    assert any("empty" in r for r in report["reasons"])
+    assert any("planning" in r for r in report["reasons"])
+
+    # Even finalizing an empty plan does not help: unit_count > 0 is required.
+    ledger.finalize_planning()
+    ok, _ = ledger.audit_complete_ok()
+    assert ok is False
+
+
+def test_planning_status_must_be_complete() -> None:
+    """All units resolved but planning never finalized → still blocked."""
+    ledger = _ledger()
+    for uid in ["billing|tenant-isolation|idor", "auth|session|session_fixation",
+                "upload|mime|malicious_file"]:
+        ledger.transition(uid, to=UNIT_OUT_OF_SCOPE)
+    assert ledger.planning_status == "in_progress"
+    ok, _ = ledger.audit_complete_ok()
+    assert ok is False
+    assert any("planning" in r for r in ledger.completeness_report()["reasons"])
+
+    ledger.finalize_planning()
+    ok, unresolved = ledger.audit_complete_ok()
+    assert ok is True
+    assert unresolved == []
+
+
+def test_planning_status_roundtrips(tmp_path: Path) -> None:
+    path = tmp_path / "coverage-ledger.json"
+    ledger = _ledger()
+    ledger.finalize_planning()
+    ledger.save(path)
+    loaded = CoverageLedger.load(path)
+    assert loaded.planning_status == "complete"
+
+
+def test_ledger_rejects_unknown_planning_status() -> None:
+    with pytest.raises(CoverageLedgerError):
+        CoverageLedger.from_dict({"schema_version": 1, "audit_id": "t", "units": [],
+                                  "planning_status": "nonsense"})
+
+
+def test_ledger_schema_rejects_malformed_unit() -> None:
+    """Hardening v1.1 §5 — the coverage schema is enforced on load."""
+    with pytest.raises(CoverageLedgerError):
+        CoverageLedger.from_dict({
+            "schema_version": 1,
+            "audit_id": "t",
+            "units": [{"id": "a|b|c", "subsystem": "a", "boundary": "b",
+                       "attack_class": "c", "status": "not_a_state"}],
+        })
 
 
 def test_save_load_roundtrip(tmp_path: Path) -> None:

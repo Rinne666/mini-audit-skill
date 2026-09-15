@@ -43,11 +43,13 @@ __all__ = [
     "fingerprint",
     "coverage",
     "gates",
+    "schema",
     "source_identity",
     "scheduler",
+    "sandbox",
     "sarif",
     "diff_scope",
     "export",
 ]
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

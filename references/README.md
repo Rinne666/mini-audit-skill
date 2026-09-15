@@ -2,7 +2,7 @@
 
 # mini-audit references
 
-5 sub-directories + 1 cross-reference index, total **100 reference files (~2MB)** plus the 28 inline Piolium agents already ported.
+4 sub-directories + 1 cross-reference index, total **100 reference files (~1.8MB)** plus the 28 inline Piolium agents already ported.
 
 ## Layout
 
@@ -172,15 +172,17 @@ Sub-agents read these via `Bash cat` or `Read` tool. They are NOT prompt templat
 | methodology/ (8) | 7 from `cybermes/knowledge/Claude-BugHunter/skills/{bug-bounty,redteam-mindset,evidence-hygiene,report-writing,triage-validation,recon-scope-triage,web2-recon}/SKILL.md` + 1 original (`permission-delta-judging.md`, distilled from admin FP rejections) |
 | wordlists/ (5) | `cybermes/tools/wordlists/*.txt` |
 
-Piolium has no equivalent for any of the 99 new files — these are pure additions that complement the 28 inline Piolium agents already ported.
+Piolium has no equivalent for any of the 100 new files (the 4 sub-directories) — these are pure additions that complement the 28 inline Piolium agents already ported.
 
-## Total: 100 reference files (~1.9MB)
+Machine-readable provenance (source repo/commit/path, license, modified flag, import date) for every one of the 130 files lives in `MANIFEST.json`; the source declarations and commit map live in `PROVENANCE.json`. Regenerate with `scripts/manifest.py`, verify with `scripts/check-manifest.py --strict`.
+
+## Total: 100 reference files (~1.8MB)
 
 The full audit pipeline (`mini-audit`) now has access to:
-- 6 first-class mavis agents (opus / sonnet roles for chamber debate + SAST + cold verification)
+- 7 first-class mavis agents (chamber debate + SAST + cold verification + permission-delta re-judgment)
 - 28 inline Piolium role specs
 - 58 per-class hunting methodologies
 - 29 per-class vulnerability references
-- 7 operator methodologies
+- 8 operator methodology references (incl. permission-delta judging)
 - 5 runtime wordlists
 - 6 supporting skills (`codeql`, `semgrep`, `sarif-parsing`, `vuln-report`, `security-threat-model`, `zeroize-audit`)

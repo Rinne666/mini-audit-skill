@@ -1,786 +1,1601 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "reference-manifest",
+  "generated_by": "scripts/manifest.py",
+  "imported_at": "2026-09-15",
+  "sources": {
+    "local": {
+      "repo": "mini-audit-skill",
+      "license": "UNKNOWN",
+      "license_file": null,
+      "commit": "local",
+      "note": "authored in-repo; no upstream"
+    },
+    "piolium": {
+      "repo": "piolium",
+      "license": "MIT",
+      "license_file": "LICENSE",
+      "local_path": "/Users/rinne/Desktop/piolium",
+      "commit": "d0da8965f468e0d9f2271c908f55ab4ecc4ac228",
+      "note": "inline agent specs; frontmatter + codex-trim stripped on import"
+    },
+    "claude-bughunter": {
+      "repo": "cybermes/Claude-BugHunter",
+      "license": "UNKNOWN",
+      "license_file": null,
+      "commit": "UNKNOWN",
+      "note": "upstream not vendored; confirm license before redistribution"
+    },
+    "strix": {
+      "repo": "strix",
+      "license": "UNKNOWN",
+      "license_file": null,
+      "commit": "UNKNOWN",
+      "note": "upstream not vendored; confirm license before redistribution"
+    }
+  },
+  "item_count": 130,
   "items": [
     {
       "path": "README.md",
       "kind": "index",
-      "size_bytes": 9842,
-      "sha256": "8d8bd2708a0b1a87da9c2c6e5d95737fcf146a19c008daab7f1f83e79074ca46"
+      "size_bytes": 10222,
+      "sha256": "c3757be6cc3626bcfae22bd7f83533a9adcf566f23e798d6b153435a555337c5",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "README.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "_hunt-class-map.md",
       "kind": "cross-reference",
       "size_bytes": 10611,
-      "sha256": "5778169eb8c80e87c0a274b1910fc9736f3d16daef251dc7a5c18f8d2c376ab2"
+      "sha256": "5778169eb8c80e87c0a274b1910fc9736f3d16daef251dc7a5c18f8d2c376ab2",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "_hunt-class-map.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "advisory-hunter.md",
       "kind": "agent-inline",
       "size_bytes": 24763,
-      "sha256": "4b283db0a2ddbee0def7cf398bf52c5be4e97c9ec9a584e7e0679cb4853c3574"
+      "sha256": "4b283db0a2ddbee0def7cf398bf52c5be4e97c9ec9a584e7e0679cb4853c3574",
+      "source_repo": "piolium",
+      "source_commit": "1742e72d6619bd7dbfa2a6fbbd44a249ee5f5a22",
+      "source_path": "agents/advisory-hunter.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "authz-auditor.md",
       "kind": "agent-inline",
       "size_bytes": 18895,
-      "sha256": "581914b1c7400e9916ba7a67ac91fc14ee5feeaaa4bb9345c5516fa5e414393a"
+      "sha256": "581914b1c7400e9916ba7a67ac91fc14ee5feeaaa4bb9345c5516fa5e414393a",
+      "source_repo": "piolium",
+      "source_commit": "e61e23936546db5462a394e8496fc58a76f7b01d",
+      "source_path": "agents/authz-auditor.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "backward-reasoner.md",
       "kind": "agent-inline",
       "size_bytes": 6706,
-      "sha256": "4e118c72ccbae9035854f202355ebf97269cf7aef1a11b2587723f105196dc37"
+      "sha256": "4e118c72ccbae9035854f202355ebf97269cf7aef1a11b2587723f105196dc37",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/backward-reasoner.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "commit-archaeologist.md",
       "kind": "agent-inline",
       "size_bytes": 21431,
-      "sha256": "9581db5485eebd986d24990022f3d3602fd8bb30685d4f3a7b8b7eed695712db"
+      "sha256": "9581db5485eebd986d24990022f3d3602fd8bb30685d4f3a7b8b7eed695712db",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/commit-archaeologist.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "confirm-reporter.md",
       "kind": "agent-inline",
       "size_bytes": 12780,
-      "sha256": "051f21bfee4b835d9224efa7684a2737096c0f3096661dac452ab2c08847d1ed"
+      "sha256": "051f21bfee4b835d9224efa7684a2737096c0f3096661dac452ab2c08847d1ed",
+      "source_repo": "piolium",
+      "source_commit": "f900c6612878e1b7244eac1909370f295f98e132",
+      "source_path": "agents/confirm-reporter.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "contradiction-reasoner.md",
       "kind": "agent-inline",
       "size_bytes": 7782,
-      "sha256": "04c6d6669feb31d55450b5cd225086a48d268b18e67ab1a46fb24df9effbcb9e"
+      "sha256": "04c6d6669feb31d55450b5cd225086a48d268b18e67ab1a46fb24df9effbcb9e",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/contradiction-reasoner.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "cross-service-auditor.md",
       "kind": "agent-inline",
       "size_bytes": 13595,
-      "sha256": "3cdf41cc59a23088c79d68ac92ac5afad36affb1b630851cf486394859a30b65"
+      "sha256": "3cdf41cc59a23088c79d68ac92ac5afad36affb1b630851cf486394859a30b65",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/cross-service-auditor.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "env-detective.md",
       "kind": "agent-inline",
       "size_bytes": 9204,
-      "sha256": "03fa7209f4808b2f0f9eb3a095e963023739fce07a79c6d64e983beb049dce33"
+      "sha256": "03fa7209f4808b2f0f9eb3a095e963023739fce07a79c6d64e983beb049dce33",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/env-detective.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "env-provisioner.md",
       "kind": "agent-inline",
       "size_bytes": 12657,
-      "sha256": "08e15d8d3e890ce3b66b9169778ee750e90f51cc5229495b3b276e686fffcd80"
+      "sha256": "08e15d8d3e890ce3b66b9169778ee750e90f51cc5229495b3b276e686fffcd80",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/env-provisioner.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "evidence-harvester.md",
       "kind": "agent-inline",
       "size_bytes": 6773,
-      "sha256": "7bec91b4d69710638122ef81ae5adf1786bef250326072a3c0ddf302401734da"
+      "sha256": "7bec91b4d69710638122ef81ae5adf1786bef250326072a3c0ddf302401734da",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/evidence-harvester.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "finding-reporter.md",
       "kind": "agent-inline",
       "size_bytes": 8800,
-      "sha256": "684cbbf232d54a89ed0a6b98231eac0f1c72c0b05e8f4c4eec054fba9f592e01"
+      "sha256": "684cbbf232d54a89ed0a6b98231eac0f1c72c0b05e8f4c4eec054fba9f592e01",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/finding-reporter.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "finding-triager.md",
       "kind": "agent-inline",
       "size_bytes": 7119,
-      "sha256": "007d60af377366a1d93240cebab702de42806513c279e9e04b86f682629859eb"
-    },
-    {
-      "path": "intent-cartographer.md",
-      "kind": "agent-inline",
-      "size_bytes": 9267,
-      "sha256": "d3c8468679bc668eb47de5a4911fcd09bd4907d8478d07097184743395585058"
-    },
-    {
-      "path": "knowledge-base-builder.md",
-      "kind": "agent-inline",
-      "size_bytes": 16250,
-      "sha256": "71d488da7649086f686dfea36770c9cc50d6fcad282aca829e119123a397c740"
-    },
-    {
-      "path": "knowledge-base-loader.md",
-      "kind": "agent-inline",
-      "size_bytes": 2607,
-      "sha256": "e7b9b96e5a011afec5810637a05e2f6968dadeacff5665af9cc8f822ab10e548"
-    },
-    {
-      "path": "longshot-aggregator.md",
-      "kind": "agent-inline",
-      "size_bytes": 5106,
-      "sha256": "3002158505d104bf77f72b02058911822a484e95e181eca615efbd8d39e9d666"
-    },
-    {
-      "path": "longshot-hunter.md",
-      "kind": "agent-inline",
-      "size_bytes": 6314,
-      "sha256": "774d69022fe8a1a98af609b255e07f43e3616fac7881b12c4707a0ff8f66f0fe"
-    },
-    {
-      "path": "patch-bypass-checker.md",
-      "kind": "agent-inline",
-      "size_bytes": 2964,
-      "sha256": "613d29735f84b33b3bfbeb8e4590357f47fa7d342d255f926117c0fe0969930e"
-    },
-    {
-      "path": "poc-builder.md",
-      "kind": "agent-inline",
-      "size_bytes": 6105,
-      "sha256": "bca2e431d3d7693d4e2f6ccb3e0ab58a3a1f589e151411dc30e73876edc3f7ae"
-    },
-    {
-      "path": "poc-executor.md",
-      "kind": "agent-inline",
-      "size_bytes": 9480,
-      "sha256": "e79aa59dad05cc6de4c5b78c0720a3ec32975965acae3d162aa1a3ed44381fca"
-    },
-    {
-      "path": "probe-strategist.md",
-      "kind": "agent-inline",
-      "size_bytes": 10608,
-      "sha256": "1b02c24c082fe8a417ff8785823682e7390964e2a39dc4ca99a47c07cdc7249f"
-    },
-    {
-      "path": "report-assembler.md",
-      "kind": "agent-inline",
-      "size_bytes": 8260,
-      "sha256": "2112012168d06f0c03db5dc5512cd737bd5052aa7be1387065d0607c95ce7d4e"
-    },
-    {
-      "path": "spec-gap-analyst.md",
-      "kind": "agent-inline",
-      "size_bytes": 8172,
-      "sha256": "965553ccce24aecea17719d2c733e9986dd6d0996fcfb783b007aaf743b77409"
-    },
-    {
-      "path": "state-concurrency-auditor.md",
-      "kind": "agent-inline",
-      "size_bytes": 11534,
-      "sha256": "ee7ed807383e484f1f59604bd4fbf15fd3f941a9453741315b3f7c6c603caa74"
-    },
-    {
-      "path": "test-mapper.md",
-      "kind": "agent-inline",
-      "size_bytes": 9369,
-      "sha256": "9fa13097568485ffc9571248123ac8ec3b35bf8673d98266139b7e27a84943ec"
-    },
-    {
-      "path": "variant-hunter.md",
-      "kind": "agent-inline",
-      "size_bytes": 3737,
-      "sha256": "040fd6f1cc5e085e5df97675247f4a773ccf7ec19bf4cda671ad8ebd6187e3be"
-    },
-    {
-      "path": "variant-scout.md",
-      "kind": "agent-inline",
-      "size_bytes": 3601,
-      "sha256": "d2f1399c2aa8058d99034fd174ba929a0a9bb55d52416e2eff81e31987901e62"
-    },
-    {
-      "path": "wave-verifier.md",
-      "kind": "agent-inline",
-      "size_bytes": 8790,
-      "sha256": "ae5e9ffe4c3e3d4455cb0090c3a2beb03f495d2e6784d21d0912cdf01bafbd61"
-    },
-    {
-      "path": "vuln-classes/agentic_system_security.md",
-      "kind": "vuln-class",
-      "size_bytes": 15301,
-      "sha256": "7b88aac6090d8f20c9bdf19aff78e928a5c1181cf931f4ab57ca8fc6f7cf8080"
-    },
-    {
-      "path": "vuln-classes/argument_injection.md",
-      "kind": "vuln-class",
-      "size_bytes": 9070,
-      "sha256": "72bc9e69e9a54ef236742a66e082d2c77627d08f24f3499bd3f542323b4e8951"
-    },
-    {
-      "path": "vuln-classes/authentication_jwt.md",
-      "kind": "vuln-class",
-      "size_bytes": 8694,
-      "sha256": "54e3a75ff3808a8031919542df82d4fe9b42614144f55729cbc9742a541728c0"
-    },
-    {
-      "path": "vuln-classes/broken_function_level_authorization.md",
-      "kind": "vuln-class",
-      "size_bytes": 7001,
-      "sha256": "fc64b40d7691a0eb8c10c9d50ebf4915c62f97990e762aaaea54b4802755a277"
-    },
-    {
-      "path": "vuln-classes/browser_security.md",
-      "kind": "vuln-class",
-      "size_bytes": 13190,
-      "sha256": "5f696ea947c9043f6b01e2887c6085583c90f61cf91b7aad4f699431f3a4ea2e"
-    },
-    {
-      "path": "vuln-classes/business_logic.md",
-      "kind": "vuln-class",
-      "size_bytes": 9508,
-      "sha256": "1def8f7839faa0b8b940d07d611f769d27c2c7ce55705779f39c52f9eb97e47b"
-    },
-    {
-      "path": "vuln-classes/csrf.md",
-      "kind": "vuln-class",
-      "size_bytes": 8364,
-      "sha256": "cb7e0049476d5acba168aff2990717c8638d37f688b32e030f32e21e7554ef3a"
-    },
-    {
-      "path": "vuln-classes/header_injection.md",
-      "kind": "vuln-class",
-      "size_bytes": 16487,
-      "sha256": "fd5ef6ff84168b79951cb0acf576292cb7e56cb1a9872f2f54629b14ccece33a"
-    },
-    {
-      "path": "vuln-classes/http_request_smuggling.md",
-      "kind": "vuln-class",
-      "size_bytes": 12167,
-      "sha256": "87d01a13bc8787931fcb50a2dbfe56614424fb27ffe0ffe0eb5c1ae100b9af66"
-    },
-    {
-      "path": "vuln-classes/idor.md",
-      "kind": "vuln-class",
-      "size_bytes": 10598,
-      "sha256": "637dc8706cf212557b90cb604e51e810e48a0a1a90bd944d5209a19a6ad1f745"
-    },
-    {
-      "path": "vuln-classes/information_disclosure.md",
-      "kind": "vuln-class",
-      "size_bytes": 9610,
-      "sha256": "bacd6ce294ab86962f6da23c590d95430f97b892e62ec9de69ab270a58986194"
-    },
-    {
-      "path": "vuln-classes/insecure_deserialization.md",
-      "kind": "vuln-class",
-      "size_bytes": 11567,
-      "sha256": "e6fce3f884dccfe04f327294ffe94da58aa986586bd6f6183087a55c67dd552e"
-    },
-    {
-      "path": "vuln-classes/insecure_file_uploads.md",
-      "kind": "vuln-class",
-      "size_bytes": 9797,
-      "sha256": "f4d5dd7b893eff5e4e54451cf7d2d535493bdca5088c66b76dd698480199d235"
-    },
-    {
-      "path": "vuln-classes/llm_prompt_injection.md",
-      "kind": "vuln-class",
-      "size_bytes": 11325,
-      "sha256": "debd4b982fa3756674f030d238c6b31c83b24b3d18fb87a3ab2e893f4366cf01"
-    },
-    {
-      "path": "vuln-classes/mass_assignment.md",
-      "kind": "vuln-class",
-      "size_bytes": 6530,
-      "sha256": "75bca1169377251d82180ad4c74307f815e8952162f8e569662bf6ef6c4bc949"
-    },
-    {
-      "path": "vuln-classes/nosql_injection.md",
-      "kind": "vuln-class",
-      "size_bytes": 14848,
-      "sha256": "2c309bf572ff91c599ab9d6f0cf13bece6f4891d6d385b7c92b70178ca6e0426"
-    },
-    {
-      "path": "vuln-classes/open_redirect.md",
-      "kind": "vuln-class",
-      "size_bytes": 6910,
-      "sha256": "1ea458c659146665676deda8752de50a24916f84ac76b6f8e980aa4b1b15d620"
-    },
-    {
-      "path": "vuln-classes/path_traversal_lfi_rfi.md",
-      "kind": "vuln-class",
-      "size_bytes": 10571,
-      "sha256": "76c60ee19846c8c0aec931b6b9b186fd93fe071c3e1a3768e1c89fe9a763e8de"
-    },
-    {
-      "path": "vuln-classes/prototype_pollution.md",
-      "kind": "vuln-class",
-      "size_bytes": 7244,
-      "sha256": "6c7ae6f601b68c54bf554b537af4a1f7ab750fa70a279ba1410f486203477072"
-    },
-    {
-      "path": "vuln-classes/race_conditions.md",
-      "kind": "vuln-class",
-      "size_bytes": 8086,
-      "sha256": "103d48cc11246697e85ae2cc11fb61d8c7470d66bb530cf74d7a061edfe196aa"
-    },
-    {
-      "path": "vuln-classes/rce.md",
-      "kind": "vuln-class",
-      "size_bytes": 8666,
-      "sha256": "8da6db08489d95ebb47a4c49931dc13ec00e3bd3245112933779b0f06b950e51"
-    },
-    {
-      "path": "vuln-classes/semantic_confusion.md",
-      "kind": "vuln-class",
-      "size_bytes": 13023,
-      "sha256": "f6efaddc64f94c4a59e33b39769d0031634e37bd9af709213a4388ef56742d9a"
-    },
-    {
-      "path": "vuln-classes/sql_injection.md",
-      "kind": "vuln-class",
-      "size_bytes": 8714,
-      "sha256": "c00a74b9392defbff2f16bb0bb72d172766967d1fc97f55de7aa428b434f0d39"
-    },
-    {
-      "path": "vuln-classes/ssrf.md",
-      "kind": "vuln-class",
-      "size_bytes": 8698,
-      "sha256": "e635d6c863920e25615ea576c46787f0fb25f8a1bd2d83ee6fa75d3ce38d0ace"
-    },
-    {
-      "path": "vuln-classes/ssti.md",
-      "kind": "vuln-class",
-      "size_bytes": 19220,
-      "sha256": "b75f49955326d2b5fc3ff7151a3795785f172cd952a5ca651fc7c5645c856978"
-    },
-    {
-      "path": "vuln-classes/subdomain_takeover.md",
-      "kind": "vuln-class",
-      "size_bytes": 8728,
-      "sha256": "f1304c4b1b3b69b93ecdab9119ed4a170c687cbe628888a06e2a483ddab181d0"
-    },
-    {
-      "path": "vuln-classes/weak_password_detection.md",
-      "kind": "vuln-class",
-      "size_bytes": 10116,
-      "sha256": "91a918cca4b7d65e87190f35edb71f04a1694726fa95fa6c893b1e6ea0a82b52"
-    },
-    {
-      "path": "vuln-classes/xss.md",
-      "kind": "vuln-class",
-      "size_bytes": 7669,
-      "sha256": "9225e8e404a128732067f93faecd1cc4729d2d323459d487c34c264ccb57d402"
-    },
-    {
-      "path": "vuln-classes/xxe.md",
-      "kind": "vuln-class",
-      "size_bytes": 7602,
-      "sha256": "94d22fbdaee90a9a801ad58510204b6378fa0d3ac52a668b73f79c1e37f8a7e9"
-    },
-    {
-      "path": "wordlists/api-endpoints.txt",
-      "kind": "wordlist",
-      "size_bytes": 390,
-      "sha256": "34a37b3a3ad2fb19d3dd0cd47703983d011fc0d4dad16f8444aac5e406849b8f"
-    },
-    {
-      "path": "wordlists/burp-parameter-names.txt",
-      "kind": "wordlist",
-      "size_bytes": 54157,
-      "sha256": "91f7e457415ffd0e4278d13887804036b62240a135a022a6fd6e831a7151899f"
-    },
-    {
-      "path": "wordlists/bypass-headers.txt",
-      "kind": "wordlist",
-      "size_bytes": 469,
-      "sha256": "1b7641248dc0664c028792e004f3a5e83572a4ba9179b5175a628d03f1a7a3e4"
-    },
-    {
-      "path": "wordlists/common.txt",
-      "kind": "wordlist",
-      "size_bytes": 38536,
-      "sha256": "47fb86ca6fb3f97e5491161581900d6d99851fb16764eacddf16aa85617c956a"
-    },
-    {
-      "path": "wordlists/raft-medium-directories.txt",
-      "kind": "wordlist",
-      "size_bytes": 250427,
-      "sha256": "a9626959f818d9e198259665c5a88053b7b061c538f46da215d172bcba305fe9"
-    },
-    {
-      "path": "methodology/bug-bounty.md",
-      "kind": "methodology",
-      "size_bytes": 78151,
-      "sha256": "0e300890f5b53a82f6b0456c3534b8b780ce5e0ffb9ffc5f190201acfe3c3c31"
-    },
-    {
-      "path": "methodology/evidence-hygiene.md",
-      "kind": "methodology",
-      "size_bytes": 18730,
-      "sha256": "04df142e5fbad1b5ea2ee70f0d3fb23b6b5523769a9d9c84c09c7f60934ed577"
-    },
-    {
-      "path": "methodology/permission-delta-judging.md",
-      "kind": "methodology",
-      "size_bytes": 34270,
-      "sha256": "912b36ad85bb860ef1ce5a5771a33b879ccd38003e3fc218487abac817953f57"
-    },
-    {
-      "path": "methodology/recon-scope-triage.md",
-      "kind": "methodology",
-      "size_bytes": 7738,
-      "sha256": "57c61ad8a5a42175299f8ae10b92f8d6f1ef48a266dff1d03f59b57cc59d38c8"
-    },
-    {
-      "path": "methodology/redteam-mindset.md",
-      "kind": "methodology",
-      "size_bytes": 28296,
-      "sha256": "2c5d5e3e297ca9745eae0161b3fc9a741c3c32f30ed08987af2cdcc48254e752"
-    },
-    {
-      "path": "methodology/report-writing.md",
-      "kind": "methodology",
-      "size_bytes": 21218,
-      "sha256": "5f66b299a2813448f07a4088222ee1516e4757c3fa6e0f04c5f8b3f3e2f5aa86"
-    },
-    {
-      "path": "methodology/triage-validation.md",
-      "kind": "methodology",
-      "size_bytes": 22398,
-      "sha256": "44721d178e1022f9aeff78bc270cd4f6c0cbdc32f7aa559c1e33344f5ce5b921"
-    },
-    {
-      "path": "methodology/web2-recon.md",
-      "kind": "methodology",
-      "size_bytes": 24474,
-      "sha256": "d8ef22e6e7ebb02f408fd525e7cfac3139beeab89ec6175cbc48711d289cbd60"
+      "sha256": "007d60af377366a1d93240cebab702de42806513c279e9e04b86f682629859eb",
+      "source_repo": "piolium",
+      "source_commit": "d0da8965f468e0d9f2271c908f55ab4ecc4ac228",
+      "source_path": "agents/finding-triager.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-api-misconfig.md",
       "kind": "hunting",
       "size_bytes": 18143,
-      "sha256": "02fc4e88558f429443c1e2821de1d82690b60536e80d522c4eafc9452f68479d"
+      "sha256": "02fc4e88558f429443c1e2821de1d82690b60536e80d522c4eafc9452f68479d",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-api-misconfig/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-aspnet.md",
       "kind": "hunting",
       "size_bytes": 20099,
-      "sha256": "8501762d701af13a8514dffcaec002ff526c4b5ff014291f61ed3e383fdbff25"
+      "sha256": "8501762d701af13a8514dffcaec002ff526c4b5ff014291f61ed3e383fdbff25",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-aspnet/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-ato.md",
       "kind": "hunting",
       "size_bytes": 12576,
-      "sha256": "785ab257709cee892b9ae08edff6e4e452c2c61a7b3615bc13a036e6f399541c"
+      "sha256": "785ab257709cee892b9ae08edff6e4e452c2c61a7b3615bc13a036e6f399541c",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-ato/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-auth-bypass.md",
       "kind": "hunting",
       "size_bytes": 32620,
-      "sha256": "fb664fe069c3dc5695932ca852348f56757538bd97fdc9b8d60e9106f9ac9128"
+      "sha256": "fb664fe069c3dc5695932ca852348f56757538bd97fdc9b8d60e9106f9ac9128",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-auth-bypass/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-brute-force.md",
       "kind": "hunting",
       "size_bytes": 17524,
-      "sha256": "b179d81f31908ad2c4e2db19b81ede6e9417ba49ef10f1e89e4db718f083f53f"
+      "sha256": "b179d81f31908ad2c4e2db19b81ede6e9417ba49ef10f1e89e4db718f083f53f",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-brute-force/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-business-logic.md",
       "kind": "hunting",
       "size_bytes": 17784,
-      "sha256": "ea406e516149e247c9f139b1f52372007f80dcbe3feeae7aa13a412d098e1bfd"
+      "sha256": "ea406e516149e247c9f139b1f52372007f80dcbe3feeae7aa13a412d098e1bfd",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-business-logic/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-cache-poison.md",
       "kind": "hunting",
       "size_bytes": 22993,
-      "sha256": "6822ff8b017b54a730aa4a5168f385b9b8022fb397532650231e3fe36b4b3e1e"
+      "sha256": "6822ff8b017b54a730aa4a5168f385b9b8022fb397532650231e3fe36b4b3e1e",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-cache-poison/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-captcha-bypass.md",
       "kind": "hunting",
       "size_bytes": 6363,
-      "sha256": "333b30ceb390a566d796d8495e342c8a22d262ee1fbc3176e23b264e2997ba9e"
+      "sha256": "333b30ceb390a566d796d8495e342c8a22d262ee1fbc3176e23b264e2997ba9e",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-captcha-bypass/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-cicd.md",
       "kind": "hunting",
       "size_bytes": 17793,
-      "sha256": "b5d26d2549099698bfc2755e895f92baf29baa6b5ab86914d1ad27ec8a3041b3"
+      "sha256": "b5d26d2549099698bfc2755e895f92baf29baa6b5ab86914d1ad27ec8a3041b3",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-cicd/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-clickjacking.md",
       "kind": "hunting",
       "size_bytes": 4419,
-      "sha256": "68774292f57945d0c9d2a31b2f64cd4779364ed7b1d67cd2ca872b84559699d2"
+      "sha256": "68774292f57945d0c9d2a31b2f64cd4779364ed7b1d67cd2ca872b84559699d2",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-clickjacking/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-cloud-misconfig.md",
       "kind": "hunting",
       "size_bytes": 12326,
-      "sha256": "c91994ba7044c99c8db3cc316a404cea45dd93d7e50b9eb1606b6251bd469030"
+      "sha256": "c91994ba7044c99c8db3cc316a404cea45dd93d7e50b9eb1606b6251bd469030",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-cloud-misconfig/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-cors.md",
       "kind": "hunting",
       "size_bytes": 14283,
-      "sha256": "32c08f6cc45609f1d1e13b001e6ac3e45dae1640a587878fb053bc20ceb6d512"
+      "sha256": "32c08f6cc45609f1d1e13b001e6ac3e45dae1640a587878fb053bc20ceb6d512",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-cors/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-csrf.md",
       "kind": "hunting",
       "size_bytes": 26523,
-      "sha256": "ab5043d91932cd4c0033f65e5e66dcf5b9ec5b4bc76ae0cf3ad58f775f3f4e90"
+      "sha256": "ab5043d91932cd4c0033f65e5e66dcf5b9ec5b4bc76ae0cf3ad58f775f3f4e90",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-csrf/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-deserialization.md",
       "kind": "hunting",
       "size_bytes": 5597,
-      "sha256": "c99b964d9e1b70e6e261b46d74838b507a9caa8d667035218a996ac8e36042e1"
+      "sha256": "c99b964d9e1b70e6e261b46d74838b507a9caa8d667035218a996ac8e36042e1",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-deserialization/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-dispatch.md",
       "kind": "hunting",
       "size_bytes": 17892,
-      "sha256": "245b6c365e7b62b39a9ee31654c81726989f0df21d709c8014f539bb0d9f858a"
+      "sha256": "245b6c365e7b62b39a9ee31654c81726989f0df21d709c8014f539bb0d9f858a",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-dispatch/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-dom.md",
       "kind": "hunting",
       "size_bytes": 16774,
-      "sha256": "fe476c0fb75e819fe09269893b8df65e275af978c24b3d9427927e423f904448"
+      "sha256": "fe476c0fb75e819fe09269893b8df65e275af978c24b3d9427927e423f904448",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-dom/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-exceptional-conditions.md",
       "kind": "hunting",
       "size_bytes": 3417,
-      "sha256": "c317e975d3af8c1248ce682ea440a22c89e0f4bba6802d711ea65d68cb8c2236"
+      "sha256": "c317e975d3af8c1248ce682ea440a22c89e0f4bba6802d711ea65d68cb8c2236",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-exceptional-conditions/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-file-upload.md",
       "kind": "hunting",
       "size_bytes": 8134,
-      "sha256": "d076a65da89c20c6febd4229ee972da370451ceda145897bf837272f1c653786"
+      "sha256": "d076a65da89c20c6febd4229ee972da370451ceda145897bf837272f1c653786",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-file-upload/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-fintech-graphql.md",
       "kind": "hunting",
       "size_bytes": 14330,
-      "sha256": "601a98876cdfd44c600de4041e4e8c61baf0488f091e29562b26300c52b23364"
+      "sha256": "601a98876cdfd44c600de4041e4e8c61baf0488f091e29562b26300c52b23364",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-fintech-graphql/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-forgot-password.md",
       "kind": "hunting",
       "size_bytes": 5394,
-      "sha256": "09d956ba5ffc2ac0db01c6610599914a99453c2fecf22d326acf37de9df98152"
+      "sha256": "09d956ba5ffc2ac0db01c6610599914a99453c2fecf22d326acf37de9df98152",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-forgot-password/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-graphql.md",
       "kind": "hunting",
       "size_bytes": 20859,
-      "sha256": "a974048d57d4f1ad3826943f029a82c39aa285b0dea5d9aab4b2b3827e6ad696"
+      "sha256": "a974048d57d4f1ad3826943f029a82c39aa285b0dea5d9aab4b2b3827e6ad696",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-graphql/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-grpc.md",
       "kind": "hunting",
       "size_bytes": 17503,
-      "sha256": "85ec1f647c852e0e75bf2e582f269d81da4a922990ba435327e12befc4c65015"
+      "sha256": "85ec1f647c852e0e75bf2e582f269d81da4a922990ba435327e12befc4c65015",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-grpc/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-host-header.md",
       "kind": "hunting",
       "size_bytes": 14352,
-      "sha256": "a6e6090ddf4beae1e755a3140293a8285d95dc3e3e496d292b6dc8865b271a07"
+      "sha256": "a6e6090ddf4beae1e755a3140293a8285d95dc3e3e496d292b6dc8865b271a07",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-host-header/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-html-injection.md",
       "kind": "hunting",
       "size_bytes": 3693,
-      "sha256": "daa5914f0acf2d7a6330c8bdd1dba0ef7da004923c46ab391fd85447750a9d01"
+      "sha256": "daa5914f0acf2d7a6330c8bdd1dba0ef7da004923c46ab391fd85447750a9d01",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-html-injection/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-http-smuggling.md",
       "kind": "hunting",
       "size_bytes": 6695,
-      "sha256": "7a26907924f5498d350bbf59f02f6d0593a349116af5d511750b7040bb32b903"
+      "sha256": "7a26907924f5498d350bbf59f02f6d0593a349116af5d511750b7040bb32b903",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-http-smuggling/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-idor.md",
       "kind": "hunting",
       "size_bytes": 21694,
-      "sha256": "f005fb3232bb00448ff816563ccfa06ecfdcb204cecb88b7aad771d7684f554c"
+      "sha256": "f005fb3232bb00448ff816563ccfa06ecfdcb204cecb88b7aad771d7684f554c",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-idor/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-jwt-crypto.md",
       "kind": "hunting",
       "size_bytes": 9406,
-      "sha256": "1989d5511da90187ed099575911c00c2aa48fa9f1806e588ce724e72a279339a"
+      "sha256": "1989d5511da90187ed099575911c00c2aa48fa9f1806e588ce724e72a279339a",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-jwt-crypto/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-k8s.md",
       "kind": "hunting",
       "size_bytes": 19858,
-      "sha256": "73711b6dcd53e92cb5da0217a6ce1f73627b328790f272d062ac1be31ed67556"
+      "sha256": "73711b6dcd53e92cb5da0217a6ce1f73627b328790f272d062ac1be31ed67556",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-k8s/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-laravel.md",
       "kind": "hunting",
       "size_bytes": 7813,
-      "sha256": "103a1c9cc93ca79b69685b8e6c175bca11c111e8b6bc31bf608ed05427285b64"
+      "sha256": "103a1c9cc93ca79b69685b8e6c175bca11c111e8b6bc31bf608ed05427285b64",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-laravel/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-ldap.md",
       "kind": "hunting",
       "size_bytes": 15583,
-      "sha256": "3ea5ec09ceed36617f4ac5111b19745ca5887cdb091d15db5b87f96f5e6549d9"
+      "sha256": "3ea5ec09ceed36617f4ac5111b19745ca5887cdb091d15db5b87f96f5e6549d9",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-ldap/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-lfi.md",
       "kind": "hunting",
       "size_bytes": 16154,
-      "sha256": "d69b8e17ca0bf64d34cb9be90adf049793a0fbf24004fef8e39e0d0bde925dfb"
+      "sha256": "d69b8e17ca0bf64d34cb9be90adf049793a0fbf24004fef8e39e0d0bde925dfb",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-lfi/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-llm-ai.md",
       "kind": "hunting",
       "size_bytes": 15933,
-      "sha256": "09792c72eab8337337b6ccd3f3be2d12296cb3037ed5b0845df06a6b49af519a"
+      "sha256": "09792c72eab8337337b6ccd3f3be2d12296cb3037ed5b0845df06a6b49af519a",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-llm-ai/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-mfa-bypass.md",
       "kind": "hunting",
       "size_bytes": 8971,
-      "sha256": "f4def47ffe4006014dbf17a5760604d8fc41a8dac774f393b95b7ca72ba304fe"
+      "sha256": "f4def47ffe4006014dbf17a5760604d8fc41a8dac774f393b95b7ca72ba304fe",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-mfa-bypass/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-misc.md",
       "kind": "hunting",
       "size_bytes": 23926,
-      "sha256": "c975e78bcc393a11af39aa550a932cecf2f47f9473132197eec479922eb65612"
+      "sha256": "c975e78bcc393a11af39aa550a932cecf2f47f9473132197eec479922eb65612",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-misc/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-nextjs.md",
       "kind": "hunting",
       "size_bytes": 10383,
-      "sha256": "748accf0cca4a4ebfd597b596553af7356f06cc65763e76c514628fa9d49bc51"
+      "sha256": "748accf0cca4a4ebfd597b596553af7356f06cc65763e76c514628fa9d49bc51",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-nextjs/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-nodejs.md",
       "kind": "hunting",
       "size_bytes": 8254,
-      "sha256": "80dad2a8ba2731e563f9e3eac23328bf0e7c58baa68517cea365db1f08b453ce"
+      "sha256": "80dad2a8ba2731e563f9e3eac23328bf0e7c58baa68517cea365db1f08b453ce",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-nodejs/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-nosqli.md",
       "kind": "hunting",
       "size_bytes": 5303,
-      "sha256": "840e9d19ec2e8c24690af1f430f595f393cc90ca60fd9518c148a2f7855c24ef"
+      "sha256": "840e9d19ec2e8c24690af1f430f595f393cc90ca60fd9518c148a2f7855c24ef",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-nosqli/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-ntlm-info.md",
       "kind": "hunting",
       "size_bytes": 17073,
-      "sha256": "7773059f219421271d126a12d08a022f4acc668f466a0e6aa9e2d20f2a8e0227"
+      "sha256": "7773059f219421271d126a12d08a022f4acc668f466a0e6aa9e2d20f2a8e0227",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-ntlm-info/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-oauth.md",
       "kind": "hunting",
       "size_bytes": 29024,
-      "sha256": "bc53f283cc6e78b367aff57d9da82dc7b7d4685bc5852a4372f0f884bf561dc3"
+      "sha256": "bc53f283cc6e78b367aff57d9da82dc7b7d4685bc5852a4372f0f884bf561dc3",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-oauth/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-open-redirect.md",
       "kind": "hunting",
       "size_bytes": 5340,
-      "sha256": "5d298094ef39afc7e42dd54b3f0149db3909d833e399de8f5ed84eb80e446e75"
+      "sha256": "5d298094ef39afc7e42dd54b3f0149db3909d833e399de8f5ed84eb80e446e75",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-open-redirect/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-race-condition.md",
       "kind": "hunting",
       "size_bytes": 35694,
-      "sha256": "fe2aa8b4c619e00e63333e0ffa55e1c863c2057bb3a88a0aa243d85c6dac6213"
+      "sha256": "fe2aa8b4c619e00e63333e0ffa55e1c863c2057bb3a88a0aa243d85c6dac6213",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-race-condition/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-rag-vector.md",
       "kind": "hunting",
       "size_bytes": 10531,
-      "sha256": "8e04af38038e46895cd180a7e71c7c115b14d7c9942ccabf4cc13094b87a9d74"
+      "sha256": "8e04af38038e46895cd180a7e71c7c115b14d7c9942ccabf4cc13094b87a9d74",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-rag-vector/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-rce.md",
       "kind": "hunting",
       "size_bytes": 30531,
-      "sha256": "865a23dd67308d93d4646603dc14da07e3002eae749e929c3ff3e8fca108d78a"
+      "sha256": "865a23dd67308d93d4646603dc14da07e3002eae749e929c3ff3e8fca108d78a",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-rce/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-saml.md",
       "kind": "hunting",
       "size_bytes": 6977,
-      "sha256": "2127a83d7046759971f4ff7dc29593e24466410103472484e2b4b507120273b7"
+      "sha256": "2127a83d7046759971f4ff7dc29593e24466410103472484e2b4b507120273b7",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-saml/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-session.md",
       "kind": "hunting",
       "size_bytes": 20100,
-      "sha256": "e426d90cce6d1f0459ae5323bd616b3c2e507252c07c0fcd5cd167dc259abada"
+      "sha256": "e426d90cce6d1f0459ae5323bd616b3c2e507252c07c0fcd5cd167dc259abada",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-session/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-shadow-api.md",
       "kind": "hunting",
       "size_bytes": 8636,
-      "sha256": "d38834f4f497a400b182baef01da83aa12362f223a6b3ebc694ad95c76de9a5e"
+      "sha256": "d38834f4f497a400b182baef01da83aa12362f223a6b3ebc694ad95c76de9a5e",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-shadow-api/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-sharepoint.md",
       "kind": "hunting",
       "size_bytes": 32595,
-      "sha256": "920413bd49e7e4be7ffcc70aec5bdecd9d65647bbfc6ac441dae75926e40b972"
+      "sha256": "920413bd49e7e4be7ffcc70aec5bdecd9d65647bbfc6ac441dae75926e40b972",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-sharepoint/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-source-leak.md",
       "kind": "hunting",
       "size_bytes": 10741,
-      "sha256": "0893592a3b1fabe2999dc401588f793b89c9705db3692af0183bdb26580e8943"
+      "sha256": "0893592a3b1fabe2999dc401588f793b89c9705db3692af0183bdb26580e8943",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-source-leak/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-spa-api.md",
       "kind": "hunting",
       "size_bytes": 8670,
-      "sha256": "8de55a4d986435aa45dc3085b1acb83f961a89f21383671964713492f38d2644"
+      "sha256": "8de55a4d986435aa45dc3085b1acb83f961a89f21383671964713492f38d2644",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-spa-api/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-springboot.md",
       "kind": "hunting",
       "size_bytes": 9589,
-      "sha256": "704f56f090526c411cf7db1b0856e365d5033f33f2172cae1d9bc8dead0f0632"
+      "sha256": "704f56f090526c411cf7db1b0856e365d5033f33f2172cae1d9bc8dead0f0632",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-springboot/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-sqli.md",
       "kind": "hunting",
       "size_bytes": 22410,
-      "sha256": "7a3be11b8c2c577bf510ac87df46ac0c22dfcf3d84e1ddd8bd3a755fca0d09d5"
+      "sha256": "7a3be11b8c2c577bf510ac87df46ac0c22dfcf3d84e1ddd8bd3a755fca0d09d5",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-sqli/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-ssrf.md",
       "kind": "hunting",
       "size_bytes": 26296,
-      "sha256": "e246e5fd0aa556d3e7aa69ddd36feb3045440d2100ec279b0f5c8134313ceced"
+      "sha256": "e246e5fd0aa556d3e7aa69ddd36feb3045440d2100ec279b0f5c8134313ceced",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-ssrf/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-ssti.md",
       "kind": "hunting",
       "size_bytes": 7535,
-      "sha256": "0bcd9293d6128a8a8af558c1f70a30d5d33facfcce53f33b056ed62fbf807148"
+      "sha256": "0bcd9293d6128a8a8af558c1f70a30d5d33facfcce53f33b056ed62fbf807148",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-ssti/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-subdomain.md",
       "kind": "hunting",
       "size_bytes": 25277,
-      "sha256": "9a7dc660e9c2a55fd6a1b03830ca3fd1ba2412f72189fe0d94281d62fe5894b8"
+      "sha256": "9a7dc660e9c2a55fd6a1b03830ca3fd1ba2412f72189fe0d94281d62fe5894b8",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-subdomain/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-tls-network.md",
       "kind": "hunting",
       "size_bytes": 20583,
-      "sha256": "9ce5771c84a784631b3a4367dade46b3ad3311ef81e0935247e01d9752d225ad"
+      "sha256": "9ce5771c84a784631b3a4367dade46b3ad3311ef81e0935247e01d9752d225ad",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-tls-network/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-websocket.md",
       "kind": "hunting",
       "size_bytes": 18903,
-      "sha256": "ea20e6b2c6e588f4d2234b9a93be7fe85e73648f9fa8e33a24d5fd10ab7ee5c9"
+      "sha256": "ea20e6b2c6e588f4d2234b9a93be7fe85e73648f9fa8e33a24d5fd10ab7ee5c9",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-websocket/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-xss.md",
       "kind": "hunting",
       "size_bytes": 29882,
-      "sha256": "7058cccf7e1bc63de0082fef154a4590b2d001f482500d4cd38750a62df6610e"
+      "sha256": "7058cccf7e1bc63de0082fef154a4590b2d001f482500d4cd38750a62df6610e",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-xss/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     },
     {
       "path": "hunting/hunt-xxe.md",
       "kind": "hunting",
       "size_bytes": 23292,
-      "sha256": "f0daba6ecd13c59b4c545cca0d6e584285d1152432062e969edc082e7db63f57"
+      "sha256": "f0daba6ecd13c59b4c545cca0d6e584285d1152432062e969edc082e7db63f57",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/hunt-xxe/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "intent-cartographer.md",
+      "kind": "agent-inline",
+      "size_bytes": 9267,
+      "sha256": "d3c8468679bc668eb47de5a4911fcd09bd4907d8478d07097184743395585058",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/intent-cartographer.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "knowledge-base-builder.md",
+      "kind": "agent-inline",
+      "size_bytes": 16250,
+      "sha256": "71d488da7649086f686dfea36770c9cc50d6fcad282aca829e119123a397c740",
+      "source_repo": "piolium",
+      "source_commit": "d0da8965f468e0d9f2271c908f55ab4ecc4ac228",
+      "source_path": "agents/knowledge-base-builder.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "knowledge-base-loader.md",
+      "kind": "agent-inline",
+      "size_bytes": 2607,
+      "sha256": "e7b9b96e5a011afec5810637a05e2f6968dadeacff5665af9cc8f822ab10e548",
+      "source_repo": "piolium",
+      "source_commit": "d0da8965f468e0d9f2271c908f55ab4ecc4ac228",
+      "source_path": "agents/knowledge-base-loader.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "longshot-aggregator.md",
+      "kind": "agent-inline",
+      "size_bytes": 5106,
+      "sha256": "3002158505d104bf77f72b02058911822a484e95e181eca615efbd8d39e9d666",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/longshot-aggregator.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "longshot-hunter.md",
+      "kind": "agent-inline",
+      "size_bytes": 6314,
+      "sha256": "774d69022fe8a1a98af609b255e07f43e3616fac7881b12c4707a0ff8f66f0fe",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/longshot-hunter.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/bug-bounty.md",
+      "kind": "methodology",
+      "size_bytes": 78151,
+      "sha256": "0e300890f5b53a82f6b0456c3534b8b780ce5e0ffb9ffc5f190201acfe3c3c31",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/bug-bounty/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/evidence-hygiene.md",
+      "kind": "methodology",
+      "size_bytes": 18730,
+      "sha256": "04df142e5fbad1b5ea2ee70f0d3fb23b6b5523769a9d9c84c09c7f60934ed577",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/evidence-hygiene/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/permission-delta-judging.md",
+      "kind": "methodology",
+      "size_bytes": 34270,
+      "sha256": "912b36ad85bb860ef1ce5a5771a33b879ccd38003e3fc218487abac817953f57",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/permission-delta-judging.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15",
+      "note": "original; distilled from admin FP rejections"
+    },
+    {
+      "path": "methodology/recon-scope-triage.md",
+      "kind": "methodology",
+      "size_bytes": 7738,
+      "sha256": "57c61ad8a5a42175299f8ae10b92f8d6f1ef48a266dff1d03f59b57cc59d38c8",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/recon-scope-triage/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/redteam-mindset.md",
+      "kind": "methodology",
+      "size_bytes": 28296,
+      "sha256": "2c5d5e3e297ca9745eae0161b3fc9a741c3c32f30ed08987af2cdcc48254e752",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/redteam-mindset/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/report-writing.md",
+      "kind": "methodology",
+      "size_bytes": 21218,
+      "sha256": "5f66b299a2813448f07a4088222ee1516e4757c3fa6e0f04c5f8b3f3e2f5aa86",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/report-writing/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/triage-validation.md",
+      "kind": "methodology",
+      "size_bytes": 22398,
+      "sha256": "44721d178e1022f9aeff78bc270cd4f6c0cbdc32f7aa559c1e33344f5ce5b921",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/triage-validation/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/web2-recon.md",
+      "kind": "methodology",
+      "size_bytes": 24474,
+      "sha256": "d8ef22e6e7ebb02f408fd525e7cfac3139beeab89ec6175cbc48711d289cbd60",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/web2-recon/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "patch-bypass-checker.md",
+      "kind": "agent-inline",
+      "size_bytes": 2964,
+      "sha256": "613d29735f84b33b3bfbeb8e4590357f47fa7d342d255f926117c0fe0969930e",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/patch-bypass-checker.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "poc-builder.md",
+      "kind": "agent-inline",
+      "size_bytes": 6105,
+      "sha256": "bca2e431d3d7693d4e2f6ccb3e0ab58a3a1f589e151411dc30e73876edc3f7ae",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/poc-builder.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "poc-executor.md",
+      "kind": "agent-inline",
+      "size_bytes": 9480,
+      "sha256": "e79aa59dad05cc6de4c5b78c0720a3ec32975965acae3d162aa1a3ed44381fca",
+      "source_repo": "piolium",
+      "source_commit": "f900c6612878e1b7244eac1909370f295f98e132",
+      "source_path": "agents/poc-executor.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "probe-strategist.md",
+      "kind": "agent-inline",
+      "size_bytes": 10608,
+      "sha256": "1b02c24c082fe8a417ff8785823682e7390964e2a39dc4ca99a47c07cdc7249f",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/probe-strategist.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "report-assembler.md",
+      "kind": "agent-inline",
+      "size_bytes": 8260,
+      "sha256": "2112012168d06f0c03db5dc5512cd737bd5052aa7be1387065d0607c95ce7d4e",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/report-assembler.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "spec-gap-analyst.md",
+      "kind": "agent-inline",
+      "size_bytes": 8172,
+      "sha256": "965553ccce24aecea17719d2c733e9986dd6d0996fcfb783b007aaf743b77409",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/spec-gap-analyst.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "state-concurrency-auditor.md",
+      "kind": "agent-inline",
+      "size_bytes": 11534,
+      "sha256": "ee7ed807383e484f1f59604bd4fbf15fd3f941a9453741315b3f7c6c603caa74",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/state-concurrency-auditor.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "test-mapper.md",
+      "kind": "agent-inline",
+      "size_bytes": 9369,
+      "sha256": "9fa13097568485ffc9571248123ac8ec3b35bf8673d98266139b7e27a84943ec",
+      "source_repo": "piolium",
+      "source_commit": "f900c6612878e1b7244eac1909370f295f98e132",
+      "source_path": "agents/test-mapper.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "variant-hunter.md",
+      "kind": "agent-inline",
+      "size_bytes": 3737,
+      "sha256": "040fd6f1cc5e085e5df97675247f4a773ccf7ec19bf4cda671ad8ebd6187e3be",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/variant-hunter.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "variant-scout.md",
+      "kind": "agent-inline",
+      "size_bytes": 3601,
+      "sha256": "d2f1399c2aa8058d99034fd174ba929a0a9bb55d52416e2eff81e31987901e62",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/variant-scout.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/agentic_system_security.md",
+      "kind": "vuln-class",
+      "size_bytes": 15301,
+      "sha256": "7b88aac6090d8f20c9bdf19aff78e928a5c1181cf931f4ab57ca8fc6f7cf8080",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/agentic_system_security.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/argument_injection.md",
+      "kind": "vuln-class",
+      "size_bytes": 9070,
+      "sha256": "72bc9e69e9a54ef236742a66e082d2c77627d08f24f3499bd3f542323b4e8951",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/argument_injection.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/authentication_jwt.md",
+      "kind": "vuln-class",
+      "size_bytes": 8694,
+      "sha256": "54e3a75ff3808a8031919542df82d4fe9b42614144f55729cbc9742a541728c0",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/authentication_jwt.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/broken_function_level_authorization.md",
+      "kind": "vuln-class",
+      "size_bytes": 7001,
+      "sha256": "fc64b40d7691a0eb8c10c9d50ebf4915c62f97990e762aaaea54b4802755a277",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/broken_function_level_authorization.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/browser_security.md",
+      "kind": "vuln-class",
+      "size_bytes": 13190,
+      "sha256": "5f696ea947c9043f6b01e2887c6085583c90f61cf91b7aad4f699431f3a4ea2e",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/browser_security.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/business_logic.md",
+      "kind": "vuln-class",
+      "size_bytes": 9508,
+      "sha256": "1def8f7839faa0b8b940d07d611f769d27c2c7ce55705779f39c52f9eb97e47b",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/business_logic.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/csrf.md",
+      "kind": "vuln-class",
+      "size_bytes": 8364,
+      "sha256": "cb7e0049476d5acba168aff2990717c8638d37f688b32e030f32e21e7554ef3a",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/csrf.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/header_injection.md",
+      "kind": "vuln-class",
+      "size_bytes": 16487,
+      "sha256": "fd5ef6ff84168b79951cb0acf576292cb7e56cb1a9872f2f54629b14ccece33a",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/header_injection.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/http_request_smuggling.md",
+      "kind": "vuln-class",
+      "size_bytes": 12167,
+      "sha256": "87d01a13bc8787931fcb50a2dbfe56614424fb27ffe0ffe0eb5c1ae100b9af66",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/http_request_smuggling.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/idor.md",
+      "kind": "vuln-class",
+      "size_bytes": 10598,
+      "sha256": "637dc8706cf212557b90cb604e51e810e48a0a1a90bd944d5209a19a6ad1f745",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/idor.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/information_disclosure.md",
+      "kind": "vuln-class",
+      "size_bytes": 9610,
+      "sha256": "bacd6ce294ab86962f6da23c590d95430f97b892e62ec9de69ab270a58986194",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/information_disclosure.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/insecure_deserialization.md",
+      "kind": "vuln-class",
+      "size_bytes": 11567,
+      "sha256": "e6fce3f884dccfe04f327294ffe94da58aa986586bd6f6183087a55c67dd552e",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/insecure_deserialization.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/insecure_file_uploads.md",
+      "kind": "vuln-class",
+      "size_bytes": 9797,
+      "sha256": "f4d5dd7b893eff5e4e54451cf7d2d535493bdca5088c66b76dd698480199d235",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/insecure_file_uploads.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/llm_prompt_injection.md",
+      "kind": "vuln-class",
+      "size_bytes": 11325,
+      "sha256": "debd4b982fa3756674f030d238c6b31c83b24b3d18fb87a3ab2e893f4366cf01",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/llm_prompt_injection.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/mass_assignment.md",
+      "kind": "vuln-class",
+      "size_bytes": 6530,
+      "sha256": "75bca1169377251d82180ad4c74307f815e8952162f8e569662bf6ef6c4bc949",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/mass_assignment.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/nosql_injection.md",
+      "kind": "vuln-class",
+      "size_bytes": 14848,
+      "sha256": "2c309bf572ff91c599ab9d6f0cf13bece6f4891d6d385b7c92b70178ca6e0426",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/nosql_injection.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/open_redirect.md",
+      "kind": "vuln-class",
+      "size_bytes": 6910,
+      "sha256": "1ea458c659146665676deda8752de50a24916f84ac76b6f8e980aa4b1b15d620",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/open_redirect.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/path_traversal_lfi_rfi.md",
+      "kind": "vuln-class",
+      "size_bytes": 10571,
+      "sha256": "76c60ee19846c8c0aec931b6b9b186fd93fe071c3e1a3768e1c89fe9a763e8de",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/path_traversal_lfi_rfi.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/prototype_pollution.md",
+      "kind": "vuln-class",
+      "size_bytes": 7244,
+      "sha256": "6c7ae6f601b68c54bf554b537af4a1f7ab750fa70a279ba1410f486203477072",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/prototype_pollution.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/race_conditions.md",
+      "kind": "vuln-class",
+      "size_bytes": 8086,
+      "sha256": "103d48cc11246697e85ae2cc11fb61d8c7470d66bb530cf74d7a061edfe196aa",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/race_conditions.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/rce.md",
+      "kind": "vuln-class",
+      "size_bytes": 8666,
+      "sha256": "8da6db08489d95ebb47a4c49931dc13ec00e3bd3245112933779b0f06b950e51",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/rce.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/semantic_confusion.md",
+      "kind": "vuln-class",
+      "size_bytes": 13023,
+      "sha256": "f6efaddc64f94c4a59e33b39769d0031634e37bd9af709213a4388ef56742d9a",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/semantic_confusion.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/sql_injection.md",
+      "kind": "vuln-class",
+      "size_bytes": 8714,
+      "sha256": "c00a74b9392defbff2f16bb0bb72d172766967d1fc97f55de7aa428b434f0d39",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/sql_injection.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/ssrf.md",
+      "kind": "vuln-class",
+      "size_bytes": 8698,
+      "sha256": "e635d6c863920e25615ea576c46787f0fb25f8a1bd2d83ee6fa75d3ce38d0ace",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/ssrf.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/ssti.md",
+      "kind": "vuln-class",
+      "size_bytes": 19220,
+      "sha256": "b75f49955326d2b5fc3ff7151a3795785f172cd952a5ca651fc7c5645c856978",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/ssti.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/subdomain_takeover.md",
+      "kind": "vuln-class",
+      "size_bytes": 8728,
+      "sha256": "f1304c4b1b3b69b93ecdab9119ed4a170c687cbe628888a06e2a483ddab181d0",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/subdomain_takeover.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/weak_password_detection.md",
+      "kind": "vuln-class",
+      "size_bytes": 10116,
+      "sha256": "91a918cca4b7d65e87190f35edb71f04a1694726fa95fa6c893b1e6ea0a82b52",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/weak_password_detection.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/xss.md",
+      "kind": "vuln-class",
+      "size_bytes": 7669,
+      "sha256": "9225e8e404a128732067f93faecd1cc4729d2d323459d487c34c264ccb57d402",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/xss.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "vuln-classes/xxe.md",
+      "kind": "vuln-class",
+      "size_bytes": 7602,
+      "sha256": "94d22fbdaee90a9a801ad58510204b6378fa0d3ac52a668b73f79c1e37f8a7e9",
+      "source_repo": "strix",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/vulnerabilities/xxe.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "wave-verifier.md",
+      "kind": "agent-inline",
+      "size_bytes": 8790,
+      "sha256": "ae5e9ffe4c3e3d4455cb0090c3a2beb03f495d2e6784d21d0912cdf01bafbd61",
+      "source_repo": "piolium",
+      "source_commit": "890888a20d52a9378d20bbbc7b8850483d97362a",
+      "source_path": "agents/wave-verifier.md",
+      "license": "MIT",
+      "modified": true,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "wordlists/api-endpoints.txt",
+      "kind": "wordlist",
+      "size_bytes": 390,
+      "sha256": "34a37b3a3ad2fb19d3dd0cd47703983d011fc0d4dad16f8444aac5e406849b8f",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "tools/wordlists/api-endpoints.txt",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "wordlists/burp-parameter-names.txt",
+      "kind": "wordlist",
+      "size_bytes": 54157,
+      "sha256": "91f7e457415ffd0e4278d13887804036b62240a135a022a6fd6e831a7151899f",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "tools/wordlists/burp-parameter-names.txt",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "wordlists/bypass-headers.txt",
+      "kind": "wordlist",
+      "size_bytes": 469,
+      "sha256": "1b7641248dc0664c028792e004f3a5e83572a4ba9179b5175a628d03f1a7a3e4",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "tools/wordlists/bypass-headers.txt",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "wordlists/common.txt",
+      "kind": "wordlist",
+      "size_bytes": 38536,
+      "sha256": "47fb86ca6fb3f97e5491161581900d6d99851fb16764eacddf16aa85617c956a",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "tools/wordlists/common.txt",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "wordlists/raft-medium-directories.txt",
+      "kind": "wordlist",
+      "size_bytes": 250427,
+      "sha256": "a9626959f818d9e198259665c5a88053b7b061c538f46da215d172bcba305fe9",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "tools/wordlists/raft-medium-directories.txt",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
     }
   ]
 }

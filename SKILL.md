@@ -1,6 +1,6 @@
 ---
 name: mini-audit
-description: Multi-phase security audit pipeline (Q0-Q4 lite / L1-L7 balanced / P1-P17 deep / V1-V7 confirm / R0-R11c revisit / M1-M7 merge / X1-X3 longshot / I1-I3 reinvest / KB0-K2 knowledge-base) with sub-agent scheduling, resumable state via memory, and Review Chamber debate protocol. Use when user asks "/mini-audit-lite", "/mini-audit-balanced", "/mini-audit-deep", "/mini-audit-confirm", "/mini-audit-revisit", "/mini-audit-diff", "/mini-audit-merge", "/mini-audit-longshot", "/mini-audit-reinvest", "/mini-audit-knowledge-base", "/mini-audit-status", "/mini-audit-resume", "/mini-audit-export", "/mini-audit-smoke", "/mini-audit-help", or "run a security audit on this repo".
+description: Multi-phase security audit pipeline (Q0-Q4 lite / L1-L7 balanced / P1-P17 deep / V1-V7 confirm / R0-R11c revisit / M1-M7 merge / X1-X3 longshot / I1-I3 reinvest / KB0-K2 knowledge-base) with sub-agent scheduling, resumable state via on-disk canonical artifacts owned by the deterministic runtime, and Review Chamber debate protocol. Use when user asks "/mini-audit-lite", "/mini-audit-balanced", "/mini-audit-deep", "/mini-audit-confirm", "/mini-audit-revisit", "/mini-audit-diff", "/mini-audit-merge", "/mini-audit-longshot", "/mini-audit-reinvest", "/mini-audit-knowledge-base", "/mini-audit-status", "/mini-audit-resume", "/mini-audit-export", "/mini-audit-smoke", "/mini-audit-help", or "run a security audit on this repo".
 allowed-tools:
   - Bash
   - Read
@@ -147,9 +147,30 @@ Top-level: `confirmed | needs_validation | rejected`. The 13 permission-delta re
 
 Scanners (Semgrep, CodeQL, Gitleaks, TruffleHog) produce SARIF. `runtime/sarif.normalize_sarif` converts SARIF 2.1.0 into candidate records. Scanner alerts are **never** directly confirmed findings; they are `untriaged` candidates that the LLM (or a deterministic triager) must evaluate.
 
+Scanner wrappers never exec the tool directly — they go `sandbox-check → capability PASS → sandbox-run → scanner`:
+
+```bash
+scripts/detect-tools.sh   --audit-root mini-audit          # → scanner/capabilities.json
+scripts/sandbox-check.sh  --audit-root mini-audit          # → sandbox/probe.json (must run first)
+scripts/run-semgrep.sh --repo-root TARGET --audit-root mini-audit
+scripts/run-codeql.sh  --repo-root TARGET --language python --audit-root mini-audit
+```
+
+**Read the exit code as scan health, not as a finding count** (one contract for both wrappers):
+
+| exit | meaning | what the orchestrator should do |
+|------|---------|--------------------------------|
+| `0` | scan completed, SARIF written under `$AUDIT_ROOT/scanner/` | normalize the SARIF |
+| `1` | the scanner ran but failed | `execution_status = failed`; do not treat as "no findings" |
+| `4` | the sandbox policy blocked execution — **nothing ran** | `execution_status = blocked`, `verdict = needs_validation`; never fall back to host execution |
+
+Findings live in the SARIF, never in the exit code — `run-semgrep.sh` deliberately does *not* pass Semgrep's `--error`, because that would make the one run that finds bugs look like a crash. stdout of each wrapper is exactly one JSON document; `run-codeql.sh` nests its per-step reports under `"steps"`.
+
 ### Sandbox policy (Spec §25)
 
 `scripts/sandbox-check.sh` probes for sandbox availability, external network isolation, scratch writability, timeout binary, resource limits. Missing critical capabilities → `execution_status = blocked`, `verdict = needs_validation`. The runtime refuses to fall back to direct host bash execution.
+
+What counts as *critical* depends on the execution kind, so the same probe permits a scan and refuses a PoC: `source-scan` requires only a writable scratch; `target-build` adds `sandbox_available`; `poc` and `target` additionally require external network isolation and resource limits. A capability that is critical for one kind is reported as a warning for the others.
 
 ### Export (Spec §34)
 
@@ -161,26 +182,74 @@ mini-audit-runtime export --format sarif     # SARIF 2.1.0 for GitHub Code Scann
 
 Filters: `--verdict`, `--min-severity`, `--class`, `--since`.
 
-### Reference provenance (Spec §35, §36)
+### Reference provenance (Spec §35, §36; Hardening v1.1 §13)
 
-Every reference file under `references/` is listed in `references/MANIFEST.json` with sha256. `scripts/check-manifest.py --strict` validates that:
+Every reference file under `references/` is listed in `references/MANIFEST.json`. As of v1.1 each item carries provenance and license metadata:
+
+| Field | Meaning |
+|-------|---------|
+| `path`, `kind`, `size_bytes`, `sha256` | integrity (v1) |
+| `source_repo` | logical source key, resolved against the manifest `sources` block |
+| `source_commit` | upstream commit the file was imported from (per-file for Piolium, `UNKNOWN` where the upstream is not vendored) |
+| `source_path` | path of the file inside the source repo |
+| `license` | license of the source repo (`MIT` for Piolium, `UNKNOWN` pending confirmation elsewhere) |
+| `modified` | whether the file was altered on import (inline agents: frontmatter + codex-trim stripped) |
+| `imported_at` | import date for the batch |
+
+Source declarations, path→source rules, per-file overrides and the frozen commit map live in `references/PROVENANCE.json`.
+
+```bash
+python scripts/manifest.py              # (re)generate MANIFEST.json
+python scripts/manifest.py --check       # verify, no write (exit 1 on drift)
+python scripts/manifest.py --resolve-commits   # refresh commits from a local checkout
+python scripts/check-manifest.py --strict
+```
+
+`check-manifest.py --strict` validates that:
 
 * all reference files are manifested
 * no manifest entries point to missing files
 * SHA-256 of on-disk files matches the manifest
 * `_hunt-class-map.md` references resolve to existing files
 * README counts match the manifest
+* every item carries the full provenance tuple
+* `source_repo` resolves to a declared source and `license` agrees with it
 
-CI runs `check-manifest.py --strict` so reference drift is caught.
+Unresolved (`UNKNOWN`) licenses — currently the non-vendored `Claude-BugHunter` / `strix` sources and the in-repo originals — are reported as warnings so they stay visible until confirmed.
+
+CI runs `check-manifest.py --strict` and `manifest.py --check` so reference and provenance drift are caught.
 
 ### Unit tests + evals
 
 ```bash
-python -m pytest tests/unit -q        # 125 unit tests for runtime
+python -m pytest tests/unit -q        # unit tests for the runtime
+python scripts/manifest.py --check    # reference manifest is current
 python scripts/check-manifest.py --strict
+python scripts/doc_counts.py --check  # docs quote no stale counts
+python evals/run.py                   # regression eval (baseline predictor)
+python evals/run.py --oracle          # ceiling: corpus self-consistency
+python evals/run.py --self-check      # fixture sanity
 ```
 
-Eval corpus under `evals/{positive,negative,ambiguous,}` exercises the permission-delta judging and verifier escalation rules from Spec §38.
+Eval corpus under `evals/{positive,negative,ambiguous,}` exercises the permission-delta judging and verifier escalation rules from Spec §38. `evals/run.py` scores TP/FP/FN, Precision/Recall/F1, NeedsValidation rate and HardBugRecall against `evals/expected.json`, and `evals/score.py` fails CI when a threshold regresses.
+
+<!-- BEGIN auto-counts — generated, do not edit by hand
+| Metric | Value |
+|--------|-------|
+| reference files (4 sub-directories) | 100 |
+| manifest items (incl. inline agents) | 130 |
+| inline agent templates | 28 |
+| per-class hunting methodologies | 58 |
+| per-class vulnerability references | 29 |
+| operator methodologies | 8 |
+| runtime wordlists | 5 |
+| eval fixtures | 30 |
+| first-class roles | 7 |
+| runtime version | 1.1.0 |
+| commands: full / partial / stub | 8 / 5 / 4 |
+<!-- END auto-counts -->
+
+Refresh the block with `python scripts/doc_counts.py --write`; `--check` fails CI when it (or a known prose claim) goes stale.
 
 ### What the SKILL still does (Reasoning + Policy layers)
 
@@ -209,11 +278,11 @@ Eval corpus under `evals/{positive,negative,ambiguous,}` exercises the permissio
 | `/piolium-longshot [--limit=N] [--timeout=ms] [--langs=py,go] [--include-tests]` | `/skill:mini-audit --action=run --mode=longshot [...]` | ◐ partial (described, never run E2E) |
 | `/piolium-reinvest [--fresh] [--dir=PATH]` | `/skill:mini-audit --action=run --mode=reinvest [--fresh] [--dir=PATH]` | ◐ partial (described, never run E2E) |
 | `/skill:mini-audit --action=run --mode=judge [--dir=PATH] [--finding=<id>]` | meta-audit re-judge of existing findings against the permission-delta framework (J1 per-finding verdict, J2 aggregate) | ✓ full (NEW) |
-| `/piolium-resume` | `/skill:mini-audit --action=resume` | ◐ partial (memory read described, never tested across a real crash) |
-| `/piolium-export [--format=json\|md-dir] [--out=PATH] [--min-severity=high] [--only-severity=high,crit] [--confirmed-only] [--exclude-fp] [--since=ISO] [--require-owner]` | `/skill:mini-audit --action=export [...]` | ✗ stub (Piolium parity, no impl) |
+| `/piolium-resume` | `/skill:mini-audit --action=resume` | ◐ partial (resume state is on-disk canonical; source-identity guard implemented, crash recovery not yet exercised E2E) |
+| `/piolium-export [--format=json\|md-dir] [--out=PATH] [--min-severity=high] [--only-severity=high,crit] [--confirmed-only] [--exclude-fp] [--since=ISO] [--require-owner]` | `/skill:mini-audit --action=export [...]` | ✓ full (runtime `export --format json\|md\|sarif`; Piolium-only flags not yet ported) |
 | `/piolium-learn [--apply]` | `/skill:mini-audit --action=learn [--apply]` | ✗ stub (Piolium parity, no impl) |
 
-**Status legend**: ✓ full = orchestrator recipe + inline templates + artifact gates specified; ◐ partial = described in SKILL.md but never run E2E or some piece is missing; ✗ stub = Piolium parity only, no impl. Of the 18 commands, 7 are full (lite/balanced/deep/confirm/revisit/merge/judge), 5 are partial (knowledge-base/diff/longshot/reinvest/resume), 5 are stub (help/status/smoke/export/learn), 1 is the universal `--action=run` which is not a command itself.
+**Status legend**: ✓ full = orchestrator recipe + inline templates + artifact gates specified; ◐ partial = described in SKILL.md but never run E2E or some piece is missing; ✗ stub = Piolium parity only, no impl. Of the 17 commands, 8 are full (lite/balanced/deep/confirm/revisit/merge/judge/export), 5 are partial (knowledge-base/diff/longshot/reinvest/resume), 4 are stub (help/status/smoke/learn).
 
 ## Phase catalog (DO NOT RENAME — persisted on-disk contract)
 
@@ -233,7 +302,7 @@ judge:         [J1, J2]                # permission-delta meta-audit re-judgment
 
 ## Per-phase agent mapping (Piolium specialist → mini-audit role)
 
-The 35 Piolium specialist agents are surfaced as 6 first-class mini-audit roles that are loaded by default. The remaining ~29 are referenced by name in phase task prompts and dispatched via `Task(subagent_type=...)` (the orchestrator decides whether to instantiate them or fold the prompt inline).
+The 35 Piolium specialist agents are surfaced as 7 first-class mini-audit roles (6 ported from Piolium plus the new `mini-audit-judge`) that are loaded by default. 28 further agents are shipped as inline markdown templates under `references/` and referenced by name in phase task prompts, dispatched via `Task(subagent_type=...)` (the orchestrator decides whether to instantiate them or fold the prompt inline).
 
 ### Default first-class roles (load via `mavis agent list` and use as `subagent_type`)
 
@@ -249,23 +318,23 @@ The 35 Piolium specialist agents are surfaced as 6 first-class mini-audit roles 
 
 **Model selection**: `mavis agent create` does not currently accept a `model` field, so the per-agent model is whatever mavis dispatches with (typically the main orchestrator's model). **The orchestrator (the main model running the skill) is responsible for picking the right `subagent_type` at dispatch time** — we do not pin model per role. If a phase needs a stronger model for a hard sub-task, the orchestrator can dispatch `general` sub-agents with explicit model instructions in the task prompt instead of relying on the first-class agent.
 
-### Per-vulnerability-class knowledge base (99 reference files in 4 sub-directories)
+### Per-vulnerability-class knowledge base (100 reference files in 4 sub-directories)
 
-`references/` contains 99 reference files in 4 sub-directories. The orchestrator reads them on-demand based on the hypothesis class.
+`references/` contains 100 reference files in 4 sub-directories. The orchestrator reads them on-demand based on the hypothesis class.
 
 | Sub-directory | Files | Source | Role in mini-audit |
 |--------------|-------|--------|---------------------|
 | `references/*.md` (28 inline agents) | 28 | `/Users/rinne/Desktop/piolium/agents/*.md` (frontmatter + codex-trim stripped) | Piolium specialist roles, inlined into `Task` prompts |
 | `references/hunting/hunt-<class>.md` | 58 | cybermes `Claude-BugHunter/skills/hunt-*/SKILL.md` | Active hunting methodology for each vuln class (how to find it) |
 | `references/vuln-classes/<class>.md` | 29 | strix `strix/skills/vulnerabilities/*.md` | Class reference (what X looks like, DBMS primitives, framework risks) |
-| `references/methodology/<name>.md` | 7 | cybermes `Claude-BugHunter/skills/<name>/SKILL.md` | Operator methodology (redteam mindset, evidence hygiene, report writing) |
+| `references/methodology/<name>.md` | 8 | 7 from cybermes `Claude-BugHunter/skills/<name>/SKILL.md` + 1 original (`permission-delta-judging.md`) | Operator methodology (redteam mindset, evidence hygiene, report writing) |
 | `references/wordlists/<name>.txt` | 5 | cybermes `tools/wordlists/*.txt` | Runtime enumeration resources (read via `Bash cat`) |
 
 **Cross-reference**: `references/_hunt-class-map.md` maps 53 vuln classes to their corresponding hunting + vuln-classes pair, and to mini-audit's `attack-ideator` 8 modes.
 
 ### Context budget discipline (CRITICAL — read first)
 
-The 99 reference files total 1.9MB on disk. None of that enters context unless the orchestrator explicitly reads a file. Per sub-agent call, inline at most **1 hunting + 1 vuln-classes + 1 inline agent** file = 10-30KB ≈ 3-8K tokens. Opus 200K context is enough headroom for 17 phases.
+The 100 reference files total 1.8MB on disk. None of that enters context unless the orchestrator explicitly reads a file. Per sub-agent call, inline at most **1 hunting + 1 vuln-classes + 1 inline agent** file = 10-30KB ≈ 3-8K tokens. Opus 200K context is enough headroom for 17 phases.
 
 **NEVER** (will blow up the context window):
 
@@ -480,7 +549,7 @@ You are the <name> role. Follow the role specification below.
 
 **No Piolium upstream tracking** (architectural decision): the 28 inline agent templates and 7 first-class agent prompts are a **one-time import**. We do NOT maintain bidirectional sync with Piolium. If a Piolium update lands new patterns of interest, the user re-imports manually. The 108 substitution renames (rounds 1-3) are also a one-time cost — the user has accepted that this fork will drift from Piolium over time.
 
-## State machine (memory-backed + on-disk canonical, Runtime Hardening v1)
+## State machine (on-disk canonical, runtime-owned; Hardening v1.1)
 
 Each phase has status: `pending` → `in_progress` → `complete` | `failed` | `skipped`.
 
@@ -547,10 +616,12 @@ Before resuming (`--action=resume`), the runtime captures a fresh `SourceIdentit
 mini-audit-runtime source diff --repo-root <path> --audit-root mini-audit
 ```
 
-| `commit` / `tree_hash` change | Behavior |
+| `commit` / `worktree_hash` change | Behavior |
 |------------------------------|----------|
 | both unchanged | reuse complete phases; resume from first non-terminal |
 | either changed | `SOURCE_CHANGED`; refuse to silently reuse; require `--accept-source-change` to acknowledge; artifact-only phases may be re-validated, source-derived phases must rerun |
+
+`worktree_hash` covers the tracked diff **and** untracked (non-ignored) files, so an uncommitted working-tree edit — not just a new commit — trips `SOURCE_CHANGED` and blocks a silent resume. `tree_hash` (committed tree) alone could not see that.
 
 ### Why both memory and disk?
 
@@ -927,6 +998,6 @@ The following Piolium skills should be loaded via the local skill loader when th
 - All Piolium `PIOLIUM_*` env vars → `MINI_AUDIT_*`
 - All Piolium `piolium/` artifact dir → `mini-audit/` (no interop requirement; mini-audit is a standalone mavis skill)
 - Phase IDs unchanged: Q0..Q4, L1..L7, P1..P17, V1..V7, R0..R11c, M1..M7, X1..X3, I1..I3, KB0..K2
-- Audit state moved from `mini-audit/audit-state.json` to `mavis memory` (with optional on-disk JSON mirror)
-- 35 specialist agents → 6 first-class roles + 29 inline-dispatched roles
+- Audit state is canonical on disk at `mini-audit/audit-state.json` (runtime-owned); `mavis memory` is only a read cache for the orchestrator
+- 35 specialist agents → 7 first-class roles + 28 inline-dispatched roles
 - Pi extension runtime → mavis skill + `Task` tool

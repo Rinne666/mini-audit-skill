@@ -26,7 +26,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
 from . import __version__
 from .atomic_io import (
@@ -34,8 +34,20 @@ from .atomic_io import (
     sha256_file,
     write_json_atomic,
 )
-from .coverage import CoverageLedger, make_unit_id
-from .diff_scope import build_diff_scope
+from .coverage import (
+    PLANNING_COMPLETE as COVERAGE_PLANNING_COMPLETE,
+    CoverageLedger,
+    CoverageLedgerError,
+    CoverageUnit,
+    make_unit_id,
+)
+from .diff_scope import (
+    analyze_path_history,
+    analyze_test_gaps,
+    build_adversarial_plan,
+    build_diff_scope,
+    structured_blast_radius,
+)
 from .export import Exporter
 from .findings import (
     FindingStore,
@@ -43,8 +55,15 @@ from .findings import (
     compute_fingerprint,
     validate_finding,
 )
-from .gates import GateResult, GateRunner, gate_for
+from .gates import GateError, GateResult, GateRunner, gate_for, has_gate
 from .sarif import normalize_sarif, normalize_sarif_file
+from .sandbox import (
+    EXECUTION_KINDS,
+    KIND_POC,
+    check_sandbox,
+    run_probe_script,
+    run_sandboxed,
+)
 from .scheduler import DEFAULT_CONFIG, dispatch
 from .source_identity import SourceIdentity, SourceIdentityError
 from .state import (
@@ -108,6 +127,29 @@ def _runtime_info() -> dict[str, Any]:
     }
 
 
+def _run_phase_gate(audit_root: Path, phase: str, workdir: Path,
+                    state: Optional[AuditState] = None) -> GateResult:
+    """Run the declared gate for *phase* (Hardening v1.1 §2/§3/§4/§5).
+
+    Returns the raw :class:`GateResult`. The caller decides whether a failure
+    is fatal. Raises :class:`GateError` when the phase has no gate at all, so
+    callers can distinguish "no gate declared" from "gate failed".
+    """
+    gate_def = gate_for(phase)
+
+    ctx: dict[str, Any] = {}
+    if state is not None:
+        skipped = {name for name, p in state.phases.items() if p.status == PHASE_SKIPPED}
+        ctx["required_phases"] = [
+            name for name in state.phases if name not in skipped
+        ]
+
+    runner = GateRunner(workdir=workdir)
+    # No pre-seeded semantic data: every semantic check declares its own
+    # artifact and the runner loads it from disk (v1.1 §3).
+    return runner.run(gate_def, semantic_data={}, ctx=ctx)
+
+
 # ---------------------------------------------------------------------------
 # Command implementations
 # ---------------------------------------------------------------------------
@@ -144,24 +186,78 @@ def cmd_phase_start(args: argparse.Namespace) -> int:
     audit_root = _resolve_audit_root(args)
     try:
         state = _load_state(audit_root)
-        state.transition(args.phase, to=PHASE_IN_PROGRESS)
+        state.transition(args.phase, to=PHASE_IN_PROGRESS, reset=bool(getattr(args, "reset", False)))
         state.heartbeat(args.phase)
         _save_state(state, audit_root)
     except (StateTransitionError, AtomicIOError) as exc:
         _err(str(exc))
-    _emit({"ok": True, "command": "phase.start", "phase": args.phase, "status": PHASE_IN_PROGRESS})
+    phase = state.phases[args.phase]
+    _emit({"ok": True, "command": "phase.start", "phase": args.phase,
+           "status": PHASE_IN_PROGRESS, "attempt": phase.attempt,
+           "max_attempts": phase.max_attempts})
     return 0
 
 
 def cmd_phase_complete(args: argparse.Namespace) -> int:
+    """Complete a phase — but only if its gate passes (Hardening v1.1 §2).
+
+    There is no bypass. ``phase complete L6`` used to advance state on the
+    agent's word alone, which made every gate advisory. Now the runtime runs
+    the declared gate for the phase first:
+
+        phase complete → gate → PASS → complete
+                             ↘ FAIL → failed (or stay in_progress)
+
+    A failed gate leaves the phase non-complete and exits non-zero.
+    """
     audit_root = _resolve_audit_root(args)
+    workdir = Path(getattr(args, "workdir", None) or ".").resolve()
     try:
         state = _load_state(audit_root)
+    except (StateTransitionError, AtomicIOError) as exc:
+        _err(str(exc))
+
+    gate_result: Optional[GateResult] = None
+    if has_gate(args.phase):
+        try:
+            gate_result = _run_phase_gate(audit_root, args.phase, workdir, state=state)
+        except GateError as exc:
+            _err(f"gate error for {args.phase}: {exc}")
+        if not gate_result.passed:
+            summary = "; ".join(f"{f.check}:{f.message}" for f in gate_result.failures[:4])
+            # Keep the phase from ever reaching `complete` on a failed gate.
+            try:
+                current = state.phases.get(args.phase)
+                if current is not None and current.status == PHASE_IN_PROGRESS:
+                    state.transition(args.phase, to=PHASE_FAILED, error=f"gate failed: {summary}")
+                _save_state(state, audit_root)
+            except (StateTransitionError, AtomicIOError):
+                pass
+            _emit(
+                {
+                    "ok": False,
+                    "command": "phase.complete",
+                    "phase": args.phase,
+                    "status": (state.phases.get(args.phase).status if args.phase in state.phases else None),
+                    "error": f"gate failed: {summary}",
+                    "gate": gate_result.to_dict(),
+                },
+                exit_code=1,
+            )
+            return 1
+    else:
+        # No declared gate for this phase (e.g. lite Q-phases, V/R/M phases).
+        # Record that explicitly rather than silently pretending it passed.
+        gate_result = GateResult(name=args.phase, passed=True)
+        gate_result.add_note(f"no default gate declared for phase {args.phase!r}; gate skipped")
+
+    try:
         state.transition(args.phase, to=PHASE_COMPLETE)
         _save_state(state, audit_root)
-    except StateTransitionError as exc:
+    except (StateTransitionError, AtomicIOError) as exc:
         _err(str(exc))
-    _emit({"ok": True, "command": "phase.complete", "phase": args.phase, "status": PHASE_COMPLETE})
+    _emit({"ok": True, "command": "phase.complete", "phase": args.phase,
+           "status": PHASE_COMPLETE, "gate": gate_result.to_dict()})
     return 0
 
 
@@ -191,53 +287,19 @@ def cmd_phase_skip(args: argparse.Namespace) -> int:
 
 def cmd_gate(args: argparse.Namespace) -> int:
     audit_root = _resolve_audit_root(args)
-    try:
-        gate_def = gate_for(args.phase)
-    except Exception as exc:  # noqa: BLE001
-        _err(f"unknown gate for phase {args.phase}: {exc}")
+    workdir = Path(args.workdir or ".").resolve()
 
-    runner = GateRunner(workdir=Path(args.workdir or ".").resolve())
-    semantic_data: dict[str, Any] = {}
-
-    ctx: dict[str, Any] = {}
-    # The L7 audit_state_terminal_phases semantic needs all phases known to
-    # audit-state.json. Look them up from state.
+    state: Optional[AuditState] = None
     try:
         state = _load_state(audit_root)
-        ctx["required_phases"] = [
-            name for name, p in state.phases.items() if p.status != PHASE_SKIPPED
-        ] or ["L1", "L2", "L3", "L4", "L5", "L6", "L6b", "L6c", "L7"]
-        # Pass audit-state itself as semantic data for terminal-phase check
-        semantic_data["mini-audit/audit-state.json"] = state.to_dict()
     except (StateTransitionError, AtomicIOError):
-        pass
+        state = None
 
-    # Pre-load JSON parseable artifacts for semantic checks. We do this
-    # AFTER the runner so that file-existence is reported by the runner
-    # (not masked by a pre-parse error here).
-    result = runner.run(gate_def, semantic_data={}, ctx=ctx)
-
-    # If existence checks already failed, don't bother loading semantics.
-    if result.passed:
-        for req in gate_def.required:
-            if req.get("parse_json"):
-                abs_path = req["path"] if os.path.isabs(req["path"]) else str(Path(args.workdir or ".") / req["path"])
-                try:
-                    semantic_data[req["path"]] = json.loads(Path(abs_path).read_text(encoding="utf-8"))
-                except (FileNotFoundError, json.JSONDecodeError) as exc:
-                    result.add_failure("parseability", req["path"], f"{type(exc).__name__}: {exc}")
-        if semantic_data:
-            # Re-run semantic checks with the data now loaded.
-            from .gates import run_semantic  # local import to avoid cycle
-            for check_name in gate_def.semantic_checks:
-                ran_ok = False
-                for src_path, src_data in semantic_data.items():
-                    ok, msg = run_semantic(check_name, src_data, ctx)
-                    if ok:
-                        ran_ok = True
-                        break
-                if not ran_ok and semantic_data:
-                    result.add_failure("semantic", None, f"semantic check {check_name!r} failed")
+    try:
+        result = _run_phase_gate(audit_root, args.phase, workdir, state=state)
+    except GateError as exc:
+        _err(f"unknown gate for phase {args.phase}: {exc}")
+        return 2
 
     payload = {"ok": result.passed, "command": "gate", "phase": args.phase, "result": result.to_dict()}
     _emit(payload, exit_code=0 if result.passed else 1)
@@ -312,27 +374,37 @@ def cmd_coverage_validate(args: argparse.Namespace) -> int:
     ledger_path = audit_root / "coverage-ledger.json"
     try:
         ledger = CoverageLedger.load(ledger_path)
-    except AtomicIOError as exc:
+    except (AtomicIOError, CoverageLedgerError) as exc:
         _err(str(exc))
-    ok, unresolved = ledger.audit_complete_ok()
-    payload = {"ok": ok, "command": "coverage.validate",
-               "histogram": ledger.histogram(),
-               "unresolved": unresolved}
-    _emit(payload, exit_code=0 if ok else 1)
-    return 0 if ok else 1
+    report = ledger.completeness_report()
+    payload = {"ok": report["ok"], "command": "coverage.validate", **report}
+    _emit(payload, exit_code=0 if report["ok"] else 1)
+    return 0 if report["ok"] else 1
 
 
 def cmd_coverage_init(args: argparse.Namespace) -> int:
     """Initialize a coverage-ledger.json from a YAML/JSON plan."""
     audit_root = _resolve_audit_root(args)
-    plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+    try:
+        plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        _err(f"cannot read coverage plan {args.plan}: {exc}")
+
     units = plan.get("units") or []
-    ledger = CoverageLedger(audit_id=plan.get("audit_id", ""), units=[
-        __import__("runtime.coverage", fromlist=["CoverageUnit"]).CoverageUnit.from_dict(u)
-        for u in units
-    ])
-    ledger.save(audit_root / "coverage-ledger.json")
-    _emit({"ok": True, "command": "coverage.init", "count": ledger.unit_count()})
+    planning_status = plan.get("planning_status") or COVERAGE_PLANNING_COMPLETE
+    try:
+        ledger = CoverageLedger(
+            audit_id=plan.get("audit_id", ""),
+            units=[CoverageUnit.from_dict(u) for u in units],
+            planning_status=planning_status,
+        )
+        ledger.save(audit_root / "coverage-ledger.json")
+    except (AtomicIOError, CoverageLedgerError) as exc:
+        _err(str(exc))
+    report = ledger.completeness_report()
+    _emit({"ok": True, "command": "coverage.init", "count": ledger.unit_count(),
+           "planning_status": ledger.planning_status,
+           "complete_ok": report["ok"], "reasons": report["reasons"]})
     return 0
 
 
@@ -414,6 +486,39 @@ def cmd_sarif_normalize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sandbox_check(args: argparse.Namespace) -> int:
+    """Evaluate the sandbox probe for an execution kind (Hardening v1.1 §8)."""
+    audit_root = _resolve_audit_root(args)
+    if args.run_probe:
+        decision = run_probe_script(audit_root, script=args.probe_script, strict=args.strict)
+    else:
+        decision = check_sandbox(args.kind, audit_root)
+    payload = {"ok": decision.ok, "command": "sandbox.check", **decision.to_dict()}
+    _emit(payload, exit_code=0 if decision.ok else 1)
+    return 0 if decision.ok else 1
+
+
+def cmd_sandbox_run(args: argparse.Namespace) -> int:
+    """Run a command only if the sandbox policy allows it. No host fallback."""
+    audit_root = _resolve_audit_root(args)
+    argv = list(args.cmd or [])
+    if argv and argv[0] == "--":
+        argv = argv[1:]
+    if not argv:
+        _err("sandbox run requires a command after --")
+
+    result = run_sandboxed(
+        argv,
+        kind=args.kind,
+        audit_root=audit_root,
+        timeout_seconds=args.timeout,
+        env=dict(os.environ),
+    )
+    payload = {"command": "sandbox.run", **result.to_dict()}
+    _emit(payload, exit_code=0 if payload["ok"] else 1)
+    return 0 if payload["ok"] else 1
+
+
 def cmd_diff_scope(args: argparse.Namespace) -> int:
     audit_root = _resolve_audit_root(args)
     try:
@@ -430,6 +535,59 @@ def cmd_diff_scope(args: argparse.Namespace) -> int:
     _emit({"ok": True, "command": "diff.scope",
            "changed": len(scope.changed), "high_risk": [c["path"] for c in scope.risk_ranked if c["risk_score"] >= 6]})
     return 0
+
+
+def cmd_diff_stage(args: argparse.Namespace) -> int:
+    """Run one diff-mode stage (D3/D4/D5/D6) or all of them (D3-D6)."""
+    audit_root = _resolve_audit_root(args)
+    audit_root.mkdir(parents=True, exist_ok=True)
+    try:
+        scope = build_diff_scope(args.repo_root, baseline=args.baseline, target=args.target,
+                                 risky_symbols=args.symbol or [])
+    except Exception as exc:  # noqa: BLE001
+        _err(str(exc))
+
+    changed_paths = [c["path"] for c in scope.changed]
+    stages = args.stage or ["D3", "D4", "D5", "D6"]
+    if "all" in stages:
+        stages = ["D3", "D4", "D5", "D6"]
+
+    written: list[str] = []
+    payloads: dict[str, Any] = {}
+    for stage in stages:
+        if stage == "D3":
+            history = analyze_path_history(args.repo_root, baseline=args.baseline,
+                                           target=args.target, paths=changed_paths)
+            payload = {k: v.to_dict() for k, v in history.items()}
+        elif stage == "D4":
+            payload = structured_blast_radius(args.repo_root, changed_paths=changed_paths,
+                                             symbols=args.symbol or [])
+        elif stage == "D5":
+            payload = analyze_test_gaps(args.repo_root, changed_paths=changed_paths,
+                                        changed_line_ranges=scope.line_ranges)
+        elif stage == "D6":
+            payload = build_adversarial_plan(args.repo_root, risk_ranked=scope.risk_ranked,
+                                             line_ranges=scope.line_ranges,
+                                             min_risk=args.min_risk)
+        else:
+            _err(f"unknown diff stage {stage!r}; expected D3, D4, D5, D6 or all")
+
+        out = audit_root / f"diff-{stage.lower()}.json"
+        write_json_atomic(out, payload)
+        written.append(str(out))
+        payloads[stage] = payload
+
+    _emit({"ok": True, "command": "diff.stage", "stages": stages,
+           "changed": len(scope.changed), "artifacts": written,
+           "summary": {
+               "D3_paths_with_history": len(payloads.get("D3", {})),
+               "D4_symbols": len(payloads.get("D4", {}).get("symbols", [])),
+               "D5_gap_risk": payloads.get("D5", {}).get("gap_risk"),
+               "D5_untested": len(payloads.get("D5", {}).get("untested_paths", [])),
+               "D6_tasks": payloads.get("D6", {}).get("task_count"),
+           }})
+    return 0
+
 
 
 def cmd_run_with_lease(args: argparse.Namespace) -> int:
@@ -554,6 +712,12 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("phase", help="phase name (e.g. L5)")
         if action == "fail":
             sp.add_argument("--error", required=True, help="error description")
+        if action == "start":
+            sp.add_argument("--reset", action="store_true",
+                            help="reset the attempt budget (required once max_attempts is exhausted)")
+        if action == "complete":
+            sp.add_argument("--workdir", default=".",
+                            help="directory the phase artifacts are resolved against (default: cwd)")
         sp.set_defaults(func=getattr(sys.modules[__name__], f"cmd_phase_{action}"))
 
     # gate
@@ -627,6 +791,38 @@ def build_parser() -> argparse.ArgumentParser:
     s_diff_scope.add_argument("--symbol", action="append", default=[],
                               help="risky symbol to trace (may repeat)")
     s_diff_scope.set_defaults(func=cmd_diff_scope)
+    s_diff_stage = s_diff_sub.add_parser("stage", parents=[audit_root_parent],
+                                         help="run diff-mode stages D3/D4/D5/D6")
+    s_diff_stage.add_argument("--repo-root", required=True)
+    s_diff_stage.add_argument("--baseline", required=True)
+    s_diff_stage.add_argument("--target", required=True)
+    s_diff_stage.add_argument("--stage", action="append", default=[],
+                              choices=["D3", "D4", "D5", "D6", "all"],
+                              help="stage to run (repeatable; default all of D3-D6)")
+    s_diff_stage.add_argument("--symbol", action="append", default=[],
+                              help="risky symbol for D4 blast radius (may repeat)")
+    s_diff_stage.add_argument("--min-risk", type=int, default=6,
+                              help="minimum risk score for D6 adversarial tasks")
+    s_diff_stage.set_defaults(func=cmd_diff_stage)
+
+    # sandbox (Hardening v1.1 §8)
+    s_sandbox = add_sub("sandbox", help="sandbox policy operations")
+    s_sandbox_sub = s_sandbox.add_subparsers(dest="subcommand", required=True)
+    s_sb_check = s_sandbox_sub.add_parser("check", parents=[audit_root_parent],
+                                          help="evaluate sandbox capabilities for an execution kind")
+    s_sb_check.add_argument("--kind", choices=list(EXECUTION_KINDS), default=KIND_POC)
+    s_sb_check.add_argument("--run-probe", action="store_true",
+                            help="run scripts/sandbox-check.sh first, then evaluate")
+    s_sb_check.add_argument("--probe-script", default=None, help="override sandbox-check.sh path")
+    s_sb_check.add_argument("--strict", action="store_true", help="fail on warnings when running the probe")
+    s_sb_check.set_defaults(func=cmd_sandbox_check)
+    s_sb_run = s_sandbox_sub.add_parser("run", parents=[audit_root_parent],
+                                        help="run a command only if the sandbox policy allows it")
+    s_sb_run.add_argument("--kind", choices=list(EXECUTION_KINDS), default=KIND_POC)
+    s_sb_run.add_argument("--timeout", type=float, default=300.0)
+    s_sb_run.add_argument("cmd", nargs=argparse.REMAINDER,
+                          help="command to run (prefix with --)")
+    s_sb_run.set_defaults(func=cmd_sandbox_run)
 
     # lease
     s_lease = add_sub("lease", help="run a registered task under scheduler policy")
@@ -649,7 +845,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.func(args) or 0)
-    except (StateTransitionError, AtomicIOError, FindingValidationError, ValueError) as exc:
+    except (StateTransitionError, AtomicIOError, FindingValidationError,
+            CoverageLedgerError, GateError, SourceIdentityError, ValueError) as exc:
         _err(str(exc))
         return 2
 

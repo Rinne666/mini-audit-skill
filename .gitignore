@@ -20,6 +20,11 @@ htmlcov/
 # Local override
 _meta.local.json
 
+# Agent working memory / local session state. Project-related data, kept on
+# disk — but it holds absolute local paths and internal working notes, so it is
+# never published.
+.workbuddy/
+
 # Runtime artifacts (audit runs produce these; never commit them)
 mini-audit/audit-state.json
 mini-audit/findings.json

@@ -43,6 +43,11 @@ from typing import Any, Iterable, Mapping, Optional
 
 from .atomic_io import AtomicIOError, read_json_or_corrupt, write_json_atomic
 from .fingerprint import compute_fingerprint
+from .schema import (
+    SchemaValidationError,
+    load_schema_or_none,
+    validate_instance,
+)
 
 FINDING_SCHEMA_VERSION = 1
 
@@ -93,12 +98,30 @@ def _now_iso() -> str:
 def validate_finding(finding: Mapping[str, Any]) -> None:
     """Validate a finding against the canonical schema.
 
-    Schema lives in ``schemas/finding.schema.json``; this function
-    implements a stdlib-only fallback validator that covers the same
-    fields, plus additional invariants the schema cannot express.
+    Two layers run, in order (Hardening v1.1 §5):
+
+    1. ``schemas/finding.schema.json`` — the authoritative declarative
+       contract, loaded from disk and executed for real. This is the same
+       schema CI and external consumers read, so there is exactly one rule
+       set for shape.
+    2. A small set of cross-field invariants the schema cannot express:
+       verdict/disposition coupling, confirmed-requires-boundary, and
+       fingerprint recomputation.
+
+    If the schema file is missing (e.g. a trimmed install), layer 1 is
+    skipped with no error so the runtime keeps working; layer 2 always runs.
     """
     if not isinstance(finding, Mapping):
         raise FindingValidationError(f"finding must be a mapping, got {type(finding).__name__}")
+
+    schema = load_schema_or_none("finding")
+    if schema is not None:
+        errors = validate_instance(finding, schema)
+        if errors:
+            raise FindingValidationError(
+                "finding.schema.json validation failed: "
+                + "; ".join(str(e) for e in errors[:5])
+            )
 
     for field in REQUIRED_TOP_FIELDS:
         if field not in finding or finding[field] in (None, ""):

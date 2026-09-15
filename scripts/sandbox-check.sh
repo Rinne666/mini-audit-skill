@@ -4,11 +4,16 @@
 # target-controlled code (PoC executors).
 #
 # Usage:
-#   sandbox-check.sh [--strict]
+#   sandbox-check.sh [--strict] [--audit-root PATH]
 #
 # Always writes JSON to mini-audit/sandbox/probe.json (or AUDIT_ROOT/sandbox/probe.json).
 # Exit code: 0 if all critical capabilities present, 1 otherwise.
 # With --strict, also fails on warnings.
+#
+# Hardening v1.1 §7: probing lives entirely in Python. v1.0's exit-code
+# heredoc called sys.exit without importing sys, so the script always crashed
+# after writing the probe. The verdict is now computed once, printed, and
+# used as the exit status.
 set -euo pipefail
 
 STRICT=0
@@ -17,7 +22,7 @@ AUDIT_ROOT="${AUDIT_ROOT:-mini-audit}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --strict) STRICT=1; shift;;
-    --audit-root) AUDIT_ROOT="$2"; shift 2;;
+    --audit-root) AUDIT_ROOT="${2:-}"; shift 2;;
     -h|--help)
       cat <<'EOF'
 Usage: sandbox-check.sh [--strict] [--audit-root PATH]
@@ -33,47 +38,66 @@ done
 OUTPUT="${AUDIT_ROOT}/sandbox/probe.json"
 mkdir -p "$(dirname "$OUTPUT")"
 
-python3 - <<PYEOF >"$OUTPUT"
-import json, os, shutil, subprocess, sys
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "python3 is required by sandbox-check.sh" >&2
+  exit 3
+fi
 
-def probe(cmd):
-    return shutil.which(cmd) is not None or subprocess.run(cmd, capture_output=True, timeout=5).returncode == 0
+OUTPUT="$OUTPUT" STRICT="$STRICT" "$PYTHON_BIN" - <<'PYEOF'
+"""Probe sandbox capabilities, write probe.json, and decide the exit code."""
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+OUTPUT = Path(os.environ["OUTPUT"])
+STRICT = os.environ.get("STRICT") == "1"
+
+
+def has_binary(*names):
+    return any(shutil.which(n) is not None for n in names)
+
 
 def has_env(name):
     return bool(os.environ.get(name))
 
-caps = {
-    "schema_version": 1,
-    "strict": bool(${STRICT}),
-    "checks": {
-        "sandbox_available": has_env("MINI_AUDIT_SANDBOX") or probe(["which","bwrap"]) or probe(["which","docker"]),
-        "external_network_disabled": has_env("MINI_AUDIT_NO_NET"),
-        "safe_writable_scratch": os.access(os.environ.get("SCRATCH", os.environ.get("TMPDIR","/tmp")), os.W_OK),
-        "timeout_available": probe(["which","timeout"]) or probe(["which","gtimeout"]),
-        "resource_limit_available": probe(["which","prlimit"]),
-        "environment_sanitized": has_env("MINI_AUDIT_SANITIZED"),
-    },
+
+checks = {
+    "sandbox_available": has_env("MINI_AUDIT_SANDBOX") or has_binary("bwrap", "docker"),
+    "external_network_disabled": has_env("MINI_AUDIT_NO_NET"),
+    "safe_writable_scratch": os.access(
+        os.environ.get("SCRATCH", os.environ.get("TMPDIR", "/tmp")), os.W_OK
+    ),
+    "timeout_available": has_binary("timeout", "gtimeout"),
+    "resource_limit_available": has_binary("prlimit"),
+    "environment_sanitized": has_env("MINI_AUDIT_SANITIZED"),
 }
 
 critical = ["sandbox_available", "safe_writable_scratch", "timeout_available"]
-all_critical_pass = all(caps["checks"][k] for k in critical)
-any_warning = not all(caps["checks"].values())
+missing_critical = [k for k in critical if not checks[k]]
+warnings = sorted(k for k, v in checks.items() if not v)
 
-caps["verdict"] = "ok" if all_critical_pass else "blocked"
-caps["warnings"] = [k for k,v in caps["checks"].items() if not v]
+probe = {
+    "schema_version": 1,
+    "strict": STRICT,
+    "checks": checks,
+    "critical": critical,
+    "missing_critical": missing_critical,
+    "warnings": warnings,
+    "verdict": "ok" if not missing_critical else "blocked",
+}
 
-print(json.dumps(caps, indent=2, ensure_ascii=False))
+OUTPUT.write_text(json.dumps(probe, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+print(json.dumps({"verdict": probe["verdict"], "missing_critical": missing_critical,
+                  "warnings": warnings}))
+
+if missing_critical:
+    sys.exit(1)
+if STRICT and warnings:
+    sys.exit(1)
+sys.exit(0)
 PYEOF
 
-# Decide exit code
-python3 - <<PYEOF
-import json
-with open("$OUTPUT", encoding="utf-8") as f:
-    caps = json.load(f)
-if caps["verdict"] != "ok":
-    sys.exit(1)
-if ${STRICT} and caps["warnings"]:
-    sys.exit(1)
-PYEOF
-
-echo "wrote $OUTPUT (verdict=$(python3 -c 'import json;print(json.load(open("'"$OUTPUT"'"))["verdict"])'))" >&2
+echo "wrote $OUTPUT" >&2

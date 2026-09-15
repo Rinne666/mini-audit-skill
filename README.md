@@ -6,7 +6,7 @@ Originally developed for internal use by the [lannister](https://github.com/Rinn
 
 ## What this is
 
-`mini-audit` runs a source-grounded security audit of an arbitrary target repository through eight composable phases:
+`mini-audit` runs a source-grounded security audit of an arbitrary target repository through a composable phase pipeline (L1–L7 balanced, with L6 split into L6b/L6c):
 
 | Phase | Mode(s) | Purpose |
 | --- | --- | --- |
@@ -26,22 +26,28 @@ Plus confirm (`V1-V7`), revisit (`R0-R11c`), merge (`M1-M7`), longshot (`X1-X3`)
 ```
 SKILL.md                              # entrypoint — top-level orchestration contract
 _meta.json                            # Mavis skill metadata
+README.md                             # this file
+runtime/                              # deterministic layer (Python 3.9+, stdlib-only)
+  state.py gates.py schema.py coverage.py findings.py scheduler.py
+  sandbox.py source_identity.py diff_scope.py sarif.py export.py fingerprint.py cli.py
+schemas/                              # JSON Schema for audit-state / finding / coverage / candidate / phase-result
+scripts/
+  mini-audit-runtime                  # CLI launcher
+  manifest.py                         # generate references/MANIFEST.json (with provenance)
+  check-manifest.py                   # verify manifest ↔ disk (+ provenance, counts)
+  doc_counts.py                       # derive + verify the counts quoted in the docs
+  detect-tools.sh run-semgrep.sh run-codeql.sh sandbox-check.sh sandbox-run.sh
+evals/                                # regression corpus (positive / negative / ambiguous) + run.py + score.py
+tests/unit/                           # runtime unit + hardening tests
 references/
-  intent-cartographer.md              # L1
-  env-detective.md                    # L1
-  probe-strategist.md                 # L5
-  cross-service-auditor.md            # L5
-  state-concurrency-auditor.md        # L5
-  finding-triager.md                  # L6 (input classifier)
-  finding-reporter.md                 # L6b (draft author)
-  poc-executor.md                     # L6c (PoC capture)
-  confirm-reporter.md                 # V-series
-  longshot-hunter.md                  # X-series
-  test-mapper.md                      # L2/L5 cross-cuts
-  vuln-classes/                       # 30 per-vuln-class playbooks
-  methodology/                        # recon-scope, report-writing, permission-delta judging
-  wordlists/                           # recon wordlists (api-endpoints, raft-medium, …)
-templates/                            # judge-verdict / report templates (placeholder)
+  README.md                           # reference index + provenance table
+  MANIFEST.json                       # 130 items: sha256 + source repo/commit/path + license
+  PROVENANCE.json                     # source declarations, path→source rules, commit map
+  *.md                                # 28 inline Piolium agent templates
+  hunting/                            # 58 per-class hunting methodologies
+  vuln-classes/                       # 29 per-vuln-class playbooks
+  methodology/                        # 8 operator methodologies (incl. permission-delta judging)
+  wordlists/                          # 5 recon wordlists (api-endpoints, raft-medium, …)
 ```
 
 ## Permissions / safety
@@ -54,8 +60,39 @@ findings and reproducible PoCs against authorized targets.
 ## Provenance
 
 Forked from `Piolium/autoaudit`. The mini-audit fork accepts drift from upstream
-over time; the 7 working modes + 5 partial + 5 stub implementation is intentional.
+over time; the current 8 full + 5 partial + 4 stub command surface is intentional.
+
+Per-file provenance for the reference corpus — source repo, upstream commit,
+source path, license, modified flag and import date — is recorded in
+`references/MANIFEST.json`, driven by `references/PROVENANCE.json`. Regenerate with
+`python scripts/manifest.py`; verify with `python scripts/check-manifest.py --strict`.
+Sources that are not vendored (`Claude-BugHunter`, `strix`) currently carry an
+`UNKNOWN` license and are flagged as warnings until confirmed.
+
+## Counts
+
+<!-- BEGIN auto-counts — generated, do not edit by hand
+| Metric | Value |
+|--------|-------|
+| reference files (4 sub-directories) | 100 |
+| manifest items (incl. inline agents) | 130 |
+| inline agent templates | 28 |
+| per-class hunting methodologies | 58 |
+| per-class vulnerability references | 29 |
+| operator methodologies | 8 |
+| runtime wordlists | 5 |
+| eval fixtures | 30 |
+| first-class roles | 7 |
+| runtime version | 1.1.0 |
+| commands: full / partial / stub | 8 / 5 / 4 |
+<!-- END auto-counts -->
+
+Refresh with `python scripts/doc_counts.py --write`; CI runs
+`python scripts/doc_counts.py --check`.
 
 ## License
 
-This is a **private** repository. No license file is included by default.
+This is a **private** repository. The mini-audit code itself ships no license file.
+Bundled reference material retains the license of its upstream source (see the
+`license` field on each item in `references/MANIFEST.json`; Piolium-derived files
+are MIT).

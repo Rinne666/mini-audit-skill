@@ -76,14 +76,72 @@ def test_complete_can_be_reopened() -> None:
 
 def test_attempts_increment() -> None:
     s = _new_state()
-    s.ensure_phase("L1")
+    s.ensure_phase("L1", max_attempts=5)
     s.transition("L1", to=PHASE_IN_PROGRESS)
     assert s.phases["L1"].attempt == 1
-    s.transition("L1", to=PHASE_IN_PROGRESS)  # no-op increment
+    s.heartbeat("L1")  # liveness does not consume an attempt
     assert s.phases["L1"].attempt == 1
     s.transition("L1", to=PHASE_FAILED, error="x")
     s.transition("L1", to=PHASE_IN_PROGRESS)
     assert s.phases["L1"].attempt == 2
+
+
+def test_in_progress_to_in_progress_is_illegal() -> None:
+    """Hardening v1.1 §10: no special case for re-entering in_progress."""
+    s = _new_state()
+    s.ensure_phase("L1")
+    s.transition("L1", to=PHASE_IN_PROGRESS)
+    with pytest.raises(StateTransitionError):
+        s.transition("L1", to=PHASE_IN_PROGRESS)
+
+
+def test_heartbeat_requires_in_progress() -> None:
+    s = _new_state()
+    s.ensure_phase("L1")
+    with pytest.raises(StateTransitionError):
+        s.heartbeat("L1")
+
+
+def test_skipped_cannot_reopen() -> None:
+    """skipped is terminal; the old in_progress bypass used to allow this."""
+    s = _new_state()
+    s.ensure_phase("L1")
+    s.transition("L1", to=PHASE_SKIPPED)
+    with pytest.raises(StateTransitionError):
+        s.transition("L1", to=PHASE_IN_PROGRESS)
+
+
+def test_max_attempts_enforced() -> None:
+    s = _new_state()
+    s.ensure_phase("L1", max_attempts=2)
+    s.transition("L1", to=PHASE_IN_PROGRESS)          # attempt 1
+    s.transition("L1", to=PHASE_FAILED, error="boom")
+    s.transition("L1", to=PHASE_IN_PROGRESS)          # attempt 2
+    s.transition("L1", to=PHASE_FAILED, error="boom")
+    with pytest.raises(StateTransitionError) as exc:
+        s.transition("L1", to=PHASE_IN_PROGRESS)      # budget exhausted
+    assert "max_attempts" in str(exc.value)
+
+
+def test_reset_reopens_attempt_budget() -> None:
+    s = _new_state()
+    s.ensure_phase("L1", max_attempts=1)
+    s.transition("L1", to=PHASE_IN_PROGRESS)
+    s.transition("L1", to=PHASE_FAILED, error="boom")
+    with pytest.raises(StateTransitionError):
+        s.transition("L1", to=PHASE_IN_PROGRESS)
+    s.transition("L1", to=PHASE_IN_PROGRESS, reset=True)
+    assert s.phases["L1"].status == PHASE_IN_PROGRESS
+    assert s.phases["L1"].attempt == 1
+
+
+def test_attempts_exhausted_helper() -> None:
+    s = _new_state()
+    s.ensure_phase("L1", max_attempts=1)
+    assert s.attempts_exhausted("L1") is False
+    s.transition("L1", to=PHASE_IN_PROGRESS)
+    s.transition("L1", to=PHASE_FAILED, error="boom")
+    assert s.attempts_exhausted("L1") is True
 
 
 def test_save_and_load_roundtrip(tmp_path: Path) -> None:
@@ -146,3 +204,44 @@ def test_mark_complete_records_timestamp() -> None:
     s.mark_complete()
     assert s.status == "complete"
     assert s.completed_at is not None
+
+
+# ---------------------------------------------------------------------------
+# Hardening v1.1 §5 — audit-state schema is authoritative
+# ---------------------------------------------------------------------------
+
+
+def test_load_rejects_schema_invalid_state(tmp_path: Path) -> None:
+    path = tmp_path / "audit-state.json"
+    bad = _new_state().to_dict()
+    bad["mode"] = "nonsense-mode"  # not in the schema enum
+    path.write_text(json.dumps(bad), encoding="utf-8")
+    with pytest.raises(StateTransitionError):
+        AuditState.load(path)
+
+
+def test_load_rejects_missing_required_source(tmp_path: Path) -> None:
+    path = tmp_path / "audit-state.json"
+    bad = _new_state().to_dict()
+    del bad["source"]["commit"]
+    path.write_text(json.dumps(bad), encoding="utf-8")
+    with pytest.raises(StateTransitionError):
+        AuditState.load(path)
+
+
+def test_save_refuses_invalid_state(tmp_path: Path) -> None:
+    s = _new_state()
+    s.mode = "definitely-not-a-mode"
+    with pytest.raises(StateTransitionError):
+        s.save(tmp_path / "audit-state.json")
+    assert not (tmp_path / "audit-state.json").exists()
+
+
+def test_save_load_accepts_all_documented_modes(tmp_path: Path) -> None:
+    for mode in ["lite", "balanced", "deep", "diff", "confirm", "revisit",
+                 "merge", "longshot", "reinvest", "knowledge-base", "judge"]:
+        s = _new_state()
+        s.mode = mode
+        path = tmp_path / f"state-{mode}.json"
+        s.save(path)
+        assert AuditState.load(path).mode == mode

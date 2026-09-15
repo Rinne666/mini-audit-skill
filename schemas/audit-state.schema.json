@@ -13,7 +13,7 @@
       "description": "Bumped when breaking changes are made to this schema."
     },
     "audit_id": {"type": "string", "minLength": 1},
-    "mode": {"enum": ["lite", "balanced", "deep", "diff", "revisit", "longshot", "merge"]},
+    "mode": {"enum": ["lite", "balanced", "deep", "diff", "confirm", "revisit", "merge", "longshot", "reinvest", "knowledge-base", "judge"]},
     "status": {"enum": ["in_progress", "complete", "incomplete", "blocked"]},
     "source": {
       "type": "object",
@@ -24,7 +24,11 @@
         "commit": {"type": "string"},
         "branch": {"type": "string"},
         "dirty": {"type": "boolean"},
-        "tree_hash": {"type": "string"}
+        "tree_hash": {"type": "string"},
+        "worktree_hash": {
+          "type": "string",
+          "description": "SHA-256 over tracked diff + untracked files; detects uncommitted source changes that tree_hash cannot see (Hardening v1.1 §1)."
+        }
       }
     },
     "runtime": {

@@ -76,21 +76,71 @@ def test_cli_state_show_after_init(tmp_path: Path) -> None:
 
 
 def test_cli_phase_lifecycle(tmp_path: Path) -> None:
+    """Hardening v1.1 §2 — `phase complete` cannot bypass the phase gate."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _run_cli("state", "init", "--repo-root", str(repo), "--audit-root", "mini-audit",
              cwd=tmp_path)
     r1 = _run_cli("phase", "start", "L5", "--audit-root", "mini-audit", cwd=tmp_path)
-    assert r1.returncode == 0
+    assert r1.returncode == 0, r1.stdout + r1.stderr
+
+    # L5's gate requires at least one probe-workspace/*/probe-summary.md.
+    # Without it, `complete` must fail and must NOT advance state.
     r2 = _run_cli("phase", "complete", "L5", "--audit-root", "mini-audit", cwd=tmp_path)
-    assert r2.returncode == 0
-    # Re-opening should fail because complete -> in_progress is allowed, but
-    # trying to go complete -> complete is illegal; we test that the runtime
-    # actually surfaces this:
-    r3 = _run_cli("phase", "complete", "L5", "--audit-root", "mini-audit", cwd=tmp_path)
-    assert r3.returncode == 2  # error
-    out = json.loads(r3.stdout)
-    assert out["ok"] is False
+    assert r2.returncode == 1, r2.stdout + r2.stderr
+    out2 = json.loads(r2.stdout)
+    assert out2["ok"] is False
+    assert "gate failed" in out2["error"]
+    assert out2["gate"]["passed"] is False
+
+    show = _run_cli("state", "show", "--audit-root", "mini-audit", cwd=tmp_path)
+    assert json.loads(show.stdout)["state"]["phases"]["L5"]["status"] != "complete"
+
+    # Satisfy the gate artifact, re-enter the phase, then complete for real.
+    probe_dir = tmp_path / "mini-audit" / "probe-workspace" / "slice-1"
+    probe_dir.mkdir(parents=True)
+    (probe_dir / "probe-summary.md").write_text("## probe\nno issues found\n", encoding="utf-8")
+
+    r3 = _run_cli("phase", "start", "L5", "--audit-root", "mini-audit", cwd=tmp_path)
+    assert r3.returncode == 0, r3.stdout + r3.stderr
+    r4 = _run_cli("phase", "complete", "L5", "--audit-root", "mini-audit", cwd=tmp_path)
+    assert r4.returncode == 0, r4.stdout + r4.stderr
+    assert json.loads(r4.stdout)["gate"]["passed"] is True
+
+    # complete -> complete is still an illegal no-op transition.
+    r5 = _run_cli("phase", "complete", "L5", "--audit-root", "mini-audit", cwd=tmp_path)
+    assert r5.returncode == 2
+    assert json.loads(r5.stdout)["ok"] is False
+
+
+def test_cli_phase_complete_gated_phase_without_artifact_stays_noncomplete(tmp_path: Path) -> None:
+    """A gated phase can never be marked complete on the agent's word alone."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_cli("state", "init", "--repo-root", str(repo), "--audit-root", "mini-audit", cwd=tmp_path)
+    _run_cli("phase", "start", "L1", "--audit-root", "mini-audit", cwd=tmp_path)
+    r = _run_cli("phase", "complete", "L1", "--audit-root", "mini-audit", cwd=tmp_path)
+    assert r.returncode == 1
+    show = json.loads(_run_cli("state", "show", "--audit-root", "mini-audit", cwd=tmp_path).stdout)
+    assert show["state"]["phases"]["L1"]["status"] == "failed"
+
+
+def test_cli_phase_start_respects_max_attempts(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_cli("state", "init", "--repo-root", str(repo), "--audit-root", "mini-audit", cwd=tmp_path)
+    for _ in range(2):
+        assert _run_cli("phase", "start", "L5", "--audit-root", "mini-audit",
+                        cwd=tmp_path).returncode == 0
+        _run_cli("phase", "fail", "L5", "--error", "boom", "--audit-root", "mini-audit", cwd=tmp_path)
+    r = _run_cli("phase", "start", "L5", "--audit-root", "mini-audit", cwd=tmp_path)
+    assert r.returncode == 2
+    assert "max_attempts" in json.loads(r.stdout)["error"]
+
+    # --reset opens a fresh attempt budget.
+    r2 = _run_cli("phase", "start", "L5", "--reset", "--audit-root", "mini-audit", cwd=tmp_path)
+    assert r2.returncode == 0, r2.stdout + r2.stderr
+    assert json.loads(r2.stdout)["attempt"] == 1
 
 
 def test_cli_finding_validate_roundtrip(tmp_path: Path) -> None:
