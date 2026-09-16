@@ -8,6 +8,7 @@ Thumbs.db
 /build/
 /dist/
 *.log
+/.tmp/
 
 # Python bytecode
 __pycache__/

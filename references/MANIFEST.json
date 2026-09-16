@@ -34,13 +34,13 @@
       "note": "upstream not vendored; confirm license before redistribution"
     }
   },
-  "item_count": 132,
+  "item_count": 133,
   "items": [
     {
       "path": "README.md",
       "kind": "index",
-      "size_bytes": 10900,
-      "sha256": "1b85844f4b0f0cd087bd14cb4f65e884f9b69b9dae9448369c6efb51318d731b",
+      "size_bytes": 10971,
+      "sha256": "fbeea737bd3bf17db4660de3137ef7e1022ddd1610f588407cb1393d910d420b",
       "source_repo": "local",
       "source_commit": "local",
       "source_path": "README.md",
@@ -973,6 +973,18 @@
       "imported_at": "2026-09-15"
     },
     {
+      "path": "methodology/diff-audit.md",
+      "kind": "methodology",
+      "size_bytes": 18806,
+      "sha256": "841f5de296262411ed29a044438ccde32697a5474583933696bf6d1a2dfb7d30",
+      "source_repo": "claude-bughunter",
+      "source_commit": "UNKNOWN",
+      "source_path": "skills/diff-audit/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
       "path": "methodology/evidence-hygiene.md",
       "kind": "methodology",
       "size_bytes": 18730,
@@ -1049,8 +1061,8 @@
     {
       "path": "methodology/search-governance.md",
       "kind": "methodology",
-      "size_bytes": 17552,
-      "sha256": "7d02e9688b2c2921b8f64429338c68ae35d5340afba92c4a2afa60fd004dc92e",
+      "size_bytes": 20435,
+      "sha256": "28a4ad0bf7937f80782c7b5386050f3f273d3a8f8d0fbe3efdff637cf590209a",
       "source_repo": "local",
       "source_commit": "local",
       "source_path": "methodology/search-governance.md",

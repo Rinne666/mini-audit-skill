@@ -64,6 +64,13 @@ jobs:
         # performance; see the scope note in the report.
         run: python evals/long_horizon_run.py
 
+      - name: Incremental replay (diff-mode audit)
+        # Replays the two-commit incremental scenarios: builds a real git
+        # worktree, runs `diff scope` against the v1→v2 change-set, applies
+        # the diff-triggered research delta, and reports four metrics on the
+        # runtime's handling of blocked-path reopen with diff provenance.
+        run: python evals/incremental_run.py
+
       - name: Shell scripts parse
         run: |
           status=0

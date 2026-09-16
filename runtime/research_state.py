@@ -122,13 +122,14 @@ LEDGER_SPECS: dict[str, ObjectSpec] = {
     "fact": ObjectSpec(
         "fact", "facts", "FCT",
         ("claim",),
-        ("evidence_refs", "source_refs", "confidence"),
+        ("evidence_refs", "source_refs", "confidence", "diff_evidence_ref"),
         ("evidence_refs", "source_refs"),
     ),
     "assumption": ObjectSpec(
         "assumption", "assumptions", "A",
         ("claim",),
-        ("status", "evidence_refs", "source_refs", "depended_on_by"),
+        ("status", "evidence_refs", "source_refs", "depended_on_by",
+         "diff_evidence_ref"),
         ("evidence_refs", "source_refs", "depended_on_by"),
     ),
     "open_question": ObjectSpec(

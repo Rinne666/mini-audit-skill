@@ -439,18 +439,20 @@ Eval corpus under `evals/{positive,negative,ambiguous,}` exercises the permissio
 <!-- BEGIN auto-counts — generated, do not edit by hand
 | Metric | Value |
 |--------|-------|
-| reference files (4 sub-directories) | 102 |
-| manifest items (incl. inline agents) | 132 |
+| reference files (4 sub-directories) | 103 |
+| manifest items (incl. inline agents) | 133 |
 | inline agent templates | 28 |
 | per-class hunting methodologies | 58 |
 | per-class vulnerability references | 29 |
-| operator methodologies | 10 |
+| operator methodologies | 11 |
 | runtime wordlists | 5 |
-| eval fixtures | 30 |
+| eval fixtures (positive / negative / ambiguous) | 30 |
+| long-horizon replay scenarios | 1 |
+| incremental replay scenarios | 1 |
 | first-class roles | 7 |
 | phase gates declared | 38 |
 | runtime version | 1.4.0 |
-| commands: full / partial / stub | 8 / 5 / 4 |
+| commands: full / partial / stub | 9 / 4 / 4 |
 <!-- END auto-counts -->
 
 Refresh the block with `python scripts/doc_counts.py --write`; `--check` fails CI when it (or a known prose claim) goes stale.
@@ -476,7 +478,7 @@ Refresh the block with `python scripts/doc_counts.py --write`; `--check` fails C
 | `/piolium-deep [--fresh] [--dir=PATH] [P5 P7 …]` | `/skill:mini-audit --action=run --mode=deep [--fresh] [--dir=PATH] [--only=P5,P7]` | ✓ full |
 | `/piolium-knowledge-base [--fresh] [--dir=PATH]` | `/skill:mini-audit --action=run --mode=knowledge-base [--fresh] [--dir=PATH]` | ◐ partial (described, never run E2E) |
 | `/piolium-confirm [--fresh] [--dir=PATH] [--repo=URL] [URL]` | `/skill:mini-audit --action=run --mode=confirm [--fresh] [--dir=PATH] [--repo=URL] [URL]` | ✓ full |
-| `/piolium-diff [--since=SHA] [--dir=PATH]` | `/skill:mini-audit --action=run --mode=diff [--since=SHA] [--dir=PATH]` | ◐ partial (phase catalog is empty; change-set derivation not implemented) |
+| `/piolium-diff [--since=SHA] [--dir=PATH]` | `/skill:mini-audit --action=run --mode=diff [--commit=SHA\|--since=SHA\|--base=X --head=Y] [--dir=PATH] [--stage=D0..D6]` | ✓ full (D0–D6 phases; selector resolved by `resolve_diff_range`; changset + blast radius + adversarial plan all live in `mini-audit/diff-{scope,d4,d5,d6}.json`; reconciliation driven by `methodology/diff-audit.md`) |
 | `/piolium-revisit [--fresh] [--dir=PATH]` | `/skill:mini-audit --action=run --mode=revisit [--fresh] [--dir=PATH]` | ✓ full |
 | `/piolium-merge --dir=A --dir=B` | `/skill:mini-audit --action=run --mode=merge --dir=A --dir=B` | ✓ full |
 | `/piolium-longshot [--limit=N] [--timeout=ms] [--langs=py,go] [--include-tests]` | `/skill:mini-audit --action=run --mode=longshot [...]` | ◐ partial (described, never run E2E) |
@@ -486,7 +488,7 @@ Refresh the block with `python scripts/doc_counts.py --write`; `--check` fails C
 | `/piolium-export [--format=json\|md-dir] [--out=PATH] [--min-severity=high] [--only-severity=high,crit] [--confirmed-only] [--exclude-fp] [--since=ISO] [--require-owner]` | `/skill:mini-audit --action=export [...]` | ✓ full (runtime `export --format json\|md\|sarif`; Piolium-only flags not yet ported) |
 | `/piolium-learn [--apply]` | `/skill:mini-audit --action=learn [--apply]` | ✗ stub (Piolium parity, no impl) |
 
-**Status legend**: ✓ full = orchestrator recipe + inline templates + artifact gates specified; ◐ partial = described in SKILL.md but never run E2E or some piece is missing; ✗ stub = Piolium parity only, no impl. Of the 17 commands, 8 are full (lite/balanced/deep/confirm/revisit/merge/judge/export), 5 are partial (knowledge-base/diff/longshot/reinvest/resume), 4 are stub (help/status/smoke/learn).
+**Status legend**: ✓ full = orchestrator recipe + inline templates + artifact gates specified; ◐ partial = described in SKILL.md but never run E2E or some piece is missing; ✗ stub = Piolium parity only, no impl. Of the 17 commands, 9 are full (lite/balanced/deep/confirm/diff/revisit/merge/judge/export), 4 are partial (knowledge-base/longshot/reinvest/resume), 4 are stub (help/status/smoke/learn).
 
 ## Phase catalog (DO NOT RENAME — persisted on-disk contract)
 
@@ -522,9 +524,9 @@ The 35 Piolium specialist agents are surfaced as 7 first-class mini-audit roles 
 
 **Model selection**: `mavis agent create` does not currently accept a `model` field, so the per-agent model is whatever mavis dispatches with (typically the main orchestrator's model). **The orchestrator (the main model running the skill) is responsible for picking the right `subagent_type` at dispatch time** — we do not pin model per role. If a phase needs a stronger model for a hard sub-task, the orchestrator can dispatch `general` sub-agents with explicit model instructions in the task prompt instead of relying on the first-class agent.
 
-### Per-vulnerability-class knowledge base (102 reference files in 4 sub-directories)
+### Per-vulnerability-class knowledge base (103 reference files in 4 sub-directories)
 
-`references/` contains 102 reference files in 4 sub-directories. The orchestrator reads them on-demand based on the hypothesis class.
+`references/` contains 103 reference files in 4 sub-directories. The orchestrator reads them on-demand based on the hypothesis class.
 
 | Sub-directory | Files | Source | Role in mini-audit |
 |--------------|-------|--------|---------------------|
@@ -538,7 +540,7 @@ The 35 Piolium specialist agents are surfaced as 7 first-class mini-audit roles 
 
 ### Context budget discipline (CRITICAL — read first)
 
-The 102 reference files total 1.7MB on disk. None of that enters context unless the orchestrator explicitly reads a file. Per sub-agent call, inline at most **1 hunting + 1 vuln-classes + 1 inline agent** file = 10-30KB ≈ 3-8K tokens. Opus 200K context is enough headroom for 17 phases.
+The 103 reference files total ~1.7MB on disk. None of that enters context unless the orchestrator explicitly reads a file. Per sub-agent call, inline at most **1 hunting + 1 vuln-classes + 1 inline agent** file = 10-30KB ≈ 3-8K tokens. Opus 200K context is enough headroom for 17 phases.
 
 **NEVER** (will blow up the context window):
 
@@ -896,6 +898,7 @@ remainder is listed below rather than assumed away.
 | merge | — | M1, M2, M3, M4, M5, M6, M7 |
 | longshot | X1, X2, X3 | — |
 | reinvest | I2 | I1, I3 |
+| diff | — | D0, D1, D2, D3, D4, D5, D6 |
 | knowledge-base | K1, K2 | KB0 |
 | judge | J1, J2 | — |
 
@@ -1077,6 +1080,51 @@ M1 deterministic copy, M2..M7 agent-driven dedup, renumber, report. Records an a
 ### `longshot` (X1-X3, hail-mary)
 X1 enumerate → X2 hunt fan-out (`variant-scout` per file) → X3 aggregate.
 
+### `diff` (D0–D6, incremental audit against a change-set)
+
+The diff mode does not own a planner. Its job is to derive the change-set,
+widen it in three tiers, then re-enter the normal Search Governance round.
+Every selector resolves to `{scope_type, selector, baseline, target, merge_base}`
+via `runtime/diff_scope.py::resolve_diff_range`; the runtime refuses hand-rolled
+ranges so a future resume can trust `diff-scope.json`.
+
+```text
+D0  selector resolution          runtime   diff scope / diff stage
+D1  changed-file enumeration     runtime   line_ranges, added/modified/deleted/renamed
+D2  risk ranking                 runtime   risk_ranked: security-sensitive paths first
+D3  history / fix-commit signal  runtime   diff-d3.json (commits, subjects, suspicious vocabulary)
+D4  blast radius of named symbol runtime   diff-d4.json (caller/callee classification)
+D5  test-gap map                 runtime   diff-d5.json (changed paths without coverage)
+D6  adversarial plan             runtime   diff-d6.json (probes + scope edges)
+─────────────────────────────────────────────────────────────────────
+then: the normal Search Governance round, with `diff-scope.json` as an extra input
+```
+
+The phase catalog is fixed — `diff: [D0, D1, D2, D3, D4, D5, D6]`. Each stage
+writes a canonical JSON the next stage can consume (`diff-scope.json`,
+`diff-d3.json`, …). After D6 the audit is **not** complete; it returns to the
+ordinary round loop with the diff artifacts as additional inputs 2/3 of
+`methodology/search-governance.md` §1. The orchestrator recipe:
+
+1. `mini-audit-runtime diff scope --repo-root <path> --commit <sha>` (or
+   `--since=<ref>`, or `--base=<x> --head=<y>`) — D0 + D1 + D2 in one shot,
+   writes `mini-audit/diff-scope.json`.
+2. `mini-audit-runtime diff stage --repo-root <path> --stage D3 --stage D4
+   --stage D5 --stage D6` (or one at a time) — writes the per-stage artifacts.
+   D4 accepts `--symbol X` to scope the blast-radius trace.
+3. Reconciliation (Skill responsibility): read the existing objective, ledger,
+   graph and findings, then apply §3.1 of `methodology/search-governance.md` —
+   the diff-mode triggers table — to decide the next intent set. The most
+   valuable thing the round can do is **reopen a blocked path** the old audit
+   left `blocked`, not re-read the diff.
+4. Propose the intents via the normal `research apply` transaction; agents
+   still only ever write into their own scratch directory.
+
+A diff audit may spawn scanners (`sarif normalize` against the changed files,
+or the blast-radius files from D4). The constraint is unchanged: scanner
+output → candidate, never finding. The diff narrows *where* a scanner looks; it
+does not change what its output is worth.
+
 ### `reinvest` (I1-I3, cross-agent)
 I1 enumerate CRIT/HIGH → I2 `wave-verifier` fan-out (cap 3) → I3 consensus summary.
 
@@ -1144,7 +1192,10 @@ flag limits J1 to a single finding for spot-checking.
 | `--longshot-include-tests` | `MINI_AUDIT_LONGSHOT_INCLUDE_TESTS` | off | Include test files |
 | `--knowledge-base=PATH` | `MINI_AUDIT_KNOWLEDGE_BASE` | unset | Markdown file or docs dir as untrusted KB input |
 | `--knowledge-base-raw=STRING` | `MINI_AUDIT_KNOWLEDGE_BASE_RAW` | unset | Inline markdown KB input |
-| `--since=SHA` | `MINI_AUDIT_SINCE` | unset | Diff base commit |
+| `--since=SHA` | `MINI_AUDIT_SINCE` | unset | Diff base commit (also `--commit`, `--base`, `--head` accepted; see `runtime/diff_scope.py::resolve_diff_range`) |
+| `--commit=SHA` | `MINI_AUDIT_COMMIT` | unset | Diff mode single-commit selector (resolves to `<sha>^..<sha>`) |
+| `--base=REF` / `--head=REF` | `MINI_AUDIT_DIFF_BASE` / `MINI_AUDIT_DIFF_HEAD` | unset | Diff mode branch/PR selector (resolves to `git merge-base base head..head`) |
+| `--stage=LIST` | `MINI_AUDIT_DIFF_STAGES` | `D0,D1,D2,D3,D4,D5,D6` | Diff mode stage allowlist (comma-separated; D0 always runs as the resolver) |
 | `--repo=URL` | `MINI_AUDIT_REPO` | unset | Confirm pass repo URL override |
 | `--finding=<id>` | `MINI_AUDIT_FINDING_ID` | unset | `--mode=judge` only: limit J1 to a single finding (spot-check) |
 

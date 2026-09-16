@@ -41,6 +41,12 @@ partial D4 (raw ``grep`` caller search). Added here:
 Caller search remains text-based by default. :func:`find_symbol_references`
 is the seam where an AST / SCIP / language-server backend plugs in, and the
 structured D4 output already carries the fields such a backend would fill.
+
+D0 turns one of three selectors into the ``(baseline, target)`` pair the rest of
+the stages consume — ``--commit`` (``sha^..sha``), ``--since`` (``ref..HEAD``)
+and ``--base``/``--head`` (``merge-base(base, head)..head``). It lives in code
+rather than in the caller because the PR case is easy to get wrong in a way that
+still produces a plausible-looking diff; see :func:`resolve_diff_range`.
 """
 
 from __future__ import annotations
@@ -54,7 +60,192 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 # ---------------------------------------------------------------------------
-# D0 / D1 — baseline resolution + changed-file enumeration
+# D0 — selector resolution
+# ---------------------------------------------------------------------------
+
+#: What the caller *meant*, recorded in ``diff-scope.json`` so a later reader
+#: (or a resumed audit) can tell which question was asked without re-deriving it
+#: from two bare SHAs.
+SCOPE_TYPE_COMMIT = "commit"
+SCOPE_TYPE_SINCE = "since"
+SCOPE_TYPE_BASE_HEAD = "base-head"
+SCOPE_TYPE_EXPLICIT = "explicit"
+
+
+class DiffRangeError(RuntimeError):
+    """A selector is unresolvable, ambiguous, or internally inconsistent."""
+
+
+@dataclass(frozen=True)
+class DiffRange:
+    """A resolved change-set: two commits plus how they were chosen."""
+
+    baseline: str
+    target: str
+    scope_type: str
+    selector: dict[str, str] = field(default_factory=dict)
+    merge_base: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        document: dict[str, Any] = {
+            "scope_type": self.scope_type,
+            "baseline": self.baseline,
+            "target": self.target,
+        }
+        if self.selector:
+            document["selector"] = dict(self.selector)
+        if self.merge_base:
+            document["merge_base"] = self.merge_base
+        return document
+
+
+def _resolve_commit(repo_root: os.PathLike[str] | str, ref: str) -> Optional[str]:
+    """Full 40-char commit SHA for *ref*, or ``None`` if it names no commit.
+
+    ``^{commit}`` peels annotated tags to the commit they point at, so a tag
+    range works without the caller knowing whether the tag is annotated.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+        capture_output=True, text=True, check=False, timeout=60,
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def _empty_tree(repo_root: os.PathLike[str] | str) -> str:
+    """The empty tree object, so a parentless commit still has a baseline.
+
+    ``<sha>^`` does not resolve for a root commit. Diffing against the empty
+    tree is what ``git diff --root`` does internally, and it answers the same
+    question ("everything this commit introduced") for the first commit of a
+    repository.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "hash-object", "-t", "tree", "--stdin"],
+        input="", capture_output=True, text=True, check=False, timeout=60,
+    )
+    tree = proc.stdout.strip()
+    if proc.returncode != 0 or not tree:
+        raise DiffRangeError(
+            f"could not compute the empty tree in {repo_root}: {proc.stderr.strip()}"
+        )
+    return tree
+
+
+def _merge_base(repo_root: os.PathLike[str] | str, left: str, right: str) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "merge-base", left, right],
+        capture_output=True, text=True, check=False, timeout=60,
+    )
+    base = proc.stdout.strip()
+    if proc.returncode != 0 or not base:
+        raise DiffRangeError(
+            f"no merge base between {left!r} and {right!r}: "
+            f"{proc.stderr.strip() or 'unrelated histories? '}"
+            "an incremental audit needs a common ancestor to diff from"
+        )
+    return base
+
+
+def resolve_diff_range(
+    repo_root: os.PathLike[str] | str,
+    *,
+    commit: Optional[str] = None,
+    since: Optional[str] = None,
+    base: Optional[str] = None,
+    head: Optional[str] = None,
+    baseline: Optional[str] = None,
+    target: Optional[str] = None,
+) -> DiffRange:
+    """Turn one of three selectors into a ``(baseline, target)`` pair.
+
+    Exactly one of these is accepted:
+
+    ``--commit <sha>``
+        ``baseline = <sha>^``, ``target = <sha>`` — "audit the security change
+        this commit introduced". A root commit diffs against the empty tree.
+
+    ``--since <sha|tag>``
+        ``baseline = <ref>``, ``target = HEAD`` — "audit everything since a
+        baseline I recorded earlier".
+
+    ``--base <x> --head <y>``
+        ``baseline = git merge-base x y``, ``target = y``. This is the PR case,
+        and the merge base is the whole point: ``x..y`` describes the difference
+        between two *tips*, so it reports everything the base branch did since
+        the fork as if the head branch had undone it. Diffs against a merge base
+        report only what the branch itself introduced.
+
+    ``--baseline`` / ``--target`` stay available and are passed through
+    verbatim, because they are the escape hatch for a revision expression the
+    three selectors do not express. They may not be combined with a selector.
+    """
+    named = [(name, value) for name, value in (("commit", commit), ("since", since))
+             if value]
+    if base or head:
+        if not (base and head):
+            raise DiffRangeError("--base and --head must be given together")
+        named.append(("base-head", f"{base}..{head}"))
+
+    if baseline or target:
+        if not (baseline and target):
+            raise DiffRangeError("--baseline and --target must be given together")
+        if named:
+            raise DiffRangeError(
+                "give either a selector (--commit / --since / --base+--head) or an "
+                f"explicit --baseline/--target, not both (got {' and '.join(n for n, _ in named)})"
+            )
+        return DiffRange(baseline=str(baseline), target=str(target),
+                         scope_type=SCOPE_TYPE_EXPLICIT,
+                         selector={"baseline": str(baseline), "target": str(target)})
+
+    if not named:
+        raise DiffRangeError(
+            "no change-set given: use --commit <sha>, --since <sha|tag>, "
+            "--base <x> --head <y>, or an explicit --baseline <a> --target <b>"
+        )
+    if len(named) > 1:
+        raise DiffRangeError(
+            f"ambiguous selector: {' and '.join(n for n, _ in named)}; give exactly one"
+        )
+
+    name, value = named[0]
+
+    if name == "commit":
+        resolved = _resolve_commit(repo_root, value)
+        if resolved is None:
+            raise DiffRangeError(f"--commit {value!r} does not resolve to a commit")
+        parent = _resolve_commit(repo_root, f"{value}^")
+        return DiffRange(baseline=parent or _empty_tree(repo_root), target=resolved,
+                         scope_type=SCOPE_TYPE_COMMIT, selector={"commit": value})
+
+    if name == "since":
+        resolved = _resolve_commit(repo_root, value)
+        if resolved is None:
+            raise DiffRangeError(f"--since {value!r} does not resolve to a commit")
+        head_sha = _resolve_commit(repo_root, "HEAD")
+        if head_sha is None:
+            raise DiffRangeError("HEAD does not resolve to a commit")
+        return DiffRange(baseline=resolved, target=head_sha,
+                         scope_type=SCOPE_TYPE_SINCE, selector={"since": value})
+
+    base_sha = _resolve_commit(repo_root, str(base))
+    if base_sha is None:
+        raise DiffRangeError(f"--base {base!r} does not resolve to a commit")
+    head_sha = _resolve_commit(repo_root, str(head))
+    if head_sha is None:
+        raise DiffRangeError(f"--head {head!r} does not resolve to a commit")
+    fork_point = _merge_base(repo_root, base_sha, head_sha)
+    return DiffRange(baseline=fork_point, target=head_sha,
+                     scope_type=SCOPE_TYPE_BASE_HEAD,
+                     selector={"base": str(base), "head": str(head)},
+                     merge_base=fork_point)
+
+
+# ---------------------------------------------------------------------------
+# D1 — changed-file enumeration
 # ---------------------------------------------------------------------------
 
 
@@ -116,13 +307,21 @@ def changed_line_ranges(repo_root: os.PathLike[str] | str, *, baseline: str, tar
         if line.startswith("+++ b/"):
             current_path = line[len("+++ b/"):]
             out.setdefault(current_path, [])
+        elif line.startswith("+++ /dev/null"):
+            # A deletion has no lines on the new side. Without this branch the
+            # path stays on whatever file was parsed last, so a deleted file's
+            # `@@ -1,2 +0,0 @@` header is attributed to an unrelated file as the
+            # range (0, 0) — and line 0 is not somewhere a reviewer can be sent.
+            current_path = None
         elif line.startswith("@@"):
             m = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", line)
             if not m or not current_path:
                 continue
+            count = int(m.group(2)) if m.group(2) is not None else 1
+            if count == 0:
+                continue  # pure deletion: nothing added to point at
             start = int(m.group(1))
-            count = int(m.group(2) or 1)
-            out[current_path].append((start, start + max(count, 1) - 1))
+            out[current_path].append((start, start + count - 1))
     return out
 
 
@@ -228,9 +427,16 @@ class DiffScope:
     risk_ranked: list[dict[str, Any]] = field(default_factory=list)
     line_ranges: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
     callers: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    #: How the two SHAs above were chosen (see :func:`resolve_diff_range`).
+    #: Recorded because "which question was this audit answering" is not
+    #: recoverable from the SHAs, and a resumed or incremental audit needs it.
+    scope_type: str = SCOPE_TYPE_EXPLICIT
+    selector: dict[str, str] = field(default_factory=dict)
+    merge_base: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        document: dict[str, Any] = {
+            "scope_type": self.scope_type,
             "baseline": self.baseline,
             "target": self.target,
             "changed": list(self.changed),
@@ -238,13 +444,30 @@ class DiffScope:
             "line_ranges": {k: list(v) for k, v in self.line_ranges.items()},
             "callers": {k: list(v) for k, v in self.callers.items()},
         }
+        if self.selector:
+            document["selector"] = dict(self.selector)
+        if self.merge_base:
+            document["merge_base"] = self.merge_base
+        return document
 
 
 def build_diff_scope(repo_root: os.PathLike[str] | str, *, baseline: str, target: str,
-                     risky_symbols: Iterable[str] = ()) -> DiffScope:
+                     risky_symbols: Iterable[str] = (),
+                     resolved_range: Optional[DiffRange] = None) -> DiffScope:
     changed = resolve_changed_files(repo_root, baseline=baseline, target=target)
     ranked = prioritize_paths(changed)
-    ranges = changed_line_ranges(repo_root, baseline=baseline, target=target, paths=[c["path"] for c in changed])
+    # Pathspec must name BOTH sides of a rename. Restricted to the new path
+    # alone, git cannot pair the two, so a rename is reported as "new file" and
+    # the whole file comes back as changed lines — for a file that was only
+    # moved. Naming both sides restores the pure-rename form, which has no
+    # hunks and therefore no changed lines to its name.
+    pathspec: list[str] = []
+    for entry in changed:
+        for key in ("path", "old_path"):
+            value = entry.get(key)
+            if value and value not in pathspec:
+                pathspec.append(str(value))
+    ranges = changed_line_ranges(repo_root, baseline=baseline, target=target, paths=pathspec)
     callers: dict[str, list[dict[str, Any]]] = {}
     for sym in risky_symbols:
         callers[sym] = find_text_callers(repo_root, symbol=sym)
@@ -255,6 +478,10 @@ def build_diff_scope(repo_root: os.PathLike[str] | str, *, baseline: str, target
         risk_ranked=ranked,
         line_ranges=ranges,
         callers=callers,
+        scope_type=resolved_range.scope_type if resolved_range else SCOPE_TYPE_EXPLICIT,
+        selector=dict(resolved_range.selector) if resolved_range else {"baseline": str(baseline),
+                                                                      "target": str(target)},
+        merge_base=resolved_range.merge_base if resolved_range else "",
     )
 
 

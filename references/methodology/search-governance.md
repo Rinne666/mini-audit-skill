@@ -24,8 +24,8 @@ it, and it can be corrected by editing a paragraph.
 
 ## 1. Inputs
 
-Read all six before generating anything. They are cheap to read and expensive to
-guess; four of the six have a command that answers the question directly.
+Read all seven before generating anything. They are cheap to read and expensive
+to guess; five of the seven have a command that answers the question directly.
 
 | # | Input | What you take from it | How to read it |
 |---|---|---|---|
@@ -35,6 +35,15 @@ guess; four of the six have a command that answers the question directly.
 | 4 | **Coverage Ledger** | what portions of the target have not been examined at all — the honest baseline for "have we even looked" | `mini-audit/coverage-ledger.json` |
 | 5 | **Candidates** | locally real primitives, their `research.role`, `chain_potential`, declared `requires_capabilities` / `grants_capabilities` | `mini-audit/candidates/*.json` |
 | 6 | **Remaining budget** | how many rounds/agents are left, and therefore how much of the below is affordable | your own phase position and lease budget |
+| 7 | **Change set** *(incremental rounds only)* | what changed recently, and how risky each change is. Read it *against* inputs 2 and 3, never instead of them: the value of a diff is that it can make an old blocked path actionable, and that only shows up in the reconciliation | `mini-audit/diff-scope.json`, plus `diff-d3/d4/d5.json` when the round has budget for them |
+
+**On the change set.** A diff is an extra input, not an extra planner. It adds
+triggers to the rules below (§3.1, §3.2) and it changes nothing else. The one
+thing it must never do is shorten the reading list: "only a few files changed"
+is exactly the situation in which the assumptions, blocked paths and capability
+edges in inputs 2 and 3 are most likely to have been invalidated, and they are
+not in the diff. See `methodology/diff-audit.md` for the reconciliation step and
+the ten questions that turn a change into research state.
 
 **On goal distance.** `graph goals` reports reachability over *verified* edges.
 That is the only reading that supports a claim. But under the strict reading
@@ -109,6 +118,31 @@ vulnerability-class hunting. Given `control_sql_expression`, the question is not
 converts it upward — database write, credential read, privileged state
 mutation?" You are searching for *consumers of a capability*, not for instances
 of a class.
+
+### 3.1 Diff-mode triggers — the rules above, applied to a change-set
+
+When the audit is in `diff` mode the same strategies fire, but the conditions
+are read against `mini-audit/diff-scope.json` and the per-stage artifacts
+(`diff-d3.json`, `diff-d4.json`, `diff-d5.json`, `diff-d6.json`) instead of
+against the code alone. The reconciliation step in `methodology/diff-audit.md`
+§5 is what makes these triggers actionable — a changed file is only interesting
+because the *old* research state said something about it. The table below names
+the strategy for each situation; the rows above describe the strategy itself.
+
+| Tier | Situation (diff-shaped) | Strategy |
+|---|---|---|
+| **P0** | the change invalidates the blocker of a high-priority blocked path (new caller, lifted guard, widened type signature, removed coercion) | `reopen-blocked-path` |
+| **P0** | changed code is on the path of a `verified` edge near a goal — capability provenance includes a modified file | `verify-frontier-edge` (as a `REVALIDATE` question) |
+| **P0** | changed code supports a `confirmed` finding (source / guard / validator / sink / capability path / proof artifact) | `close-reported-capability-path` (as a revalidation question) |
+| **P1** | a new caller of a held capability appeared in the diff — no consumer was recorded before | `capability-consumer-search` |
+| **P1** | a changed parser / serializer / validator may invalidate a shared assumption other modules depend on | `assumption-verification` |
+| **P2** | low-risk changed files that nobody has looked at since the last audit | `coverage-exploration` |
+
+The P0 rows are the ones an incremental audit exists for. Each one asks a
+question that **cannot be answered from the diff alone**: it requires reading
+the old state. Skipping the reconciliation step (§5 of `diff-audit.md`) and
+going straight to "what changed" turns the diff into a smaller full audit with
+all of its blind spots and none of its history.
 
 ### P2 — breadth, and the first thing to drop
 

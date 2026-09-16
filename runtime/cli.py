@@ -42,10 +42,13 @@ from .coverage import (
     make_unit_id,
 )
 from .diff_scope import (
+    DiffRange,
+    DiffRangeError,
     analyze_path_history,
     analyze_test_gaps,
     build_adversarial_plan,
     build_diff_scope,
+    resolve_diff_range,
     structured_blast_radius,
 )
 from .export import Exporter
@@ -584,21 +587,50 @@ def cmd_sandbox_run(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def _resolve_diff_request(args: argparse.Namespace) -> DiffRange:
+    """D0: turn whatever selector the caller used into a ``(baseline, target)``.
+
+    Incremental auditing is only as good as its change-set: a PR audited with
+    ``base..head`` instead of ``merge-base(base, head)..head`` reports the base
+    branch's own commits as if this branch had reverted them — a plausible
+    looking diff over the wrong question. Resolving here means the three
+    selectors share one implementation.
+    """
+    try:
+        return resolve_diff_range(
+            args.repo_root,
+            commit=getattr(args, "commit", None),
+            since=getattr(args, "since", None),
+            base=getattr(args, "base", None),
+            head=getattr(args, "head", None),
+            baseline=getattr(args, "baseline", None),
+            target=getattr(args, "target", None),
+        )
+    except DiffRangeError as exc:
+        _err(str(exc), code="DIFF_RANGE")
+    except Exception as exc:  # noqa: BLE001
+        _err(str(exc), code="DIFF_RANGE")
+
+
 def cmd_diff_scope(args: argparse.Namespace) -> int:
     audit_root = _resolve_audit_root(args)
+    resolved = _resolve_diff_request(args)
     try:
         scope = build_diff_scope(
             args.repo_root,
-            baseline=args.baseline,
-            target=args.target,
+            baseline=resolved.baseline,
+            target=resolved.target,
             risky_symbols=args.symbol or [],
+            resolved_range=resolved,
         )
     except Exception as exc:  # noqa: BLE001
         _err(str(exc))
     out = audit_root / "diff-scope.json"
     write_json_atomic(out, scope.to_dict())
     _emit({"ok": True, "command": "diff.scope",
-           "changed": len(scope.changed), "high_risk": [c["path"] for c in scope.risk_ranked if c["risk_score"] >= 6]})
+           **resolved.to_dict(),
+           "changed": len(scope.changed),
+           "high_risk": [c["path"] for c in scope.risk_ranked if c["risk_score"] >= 6]})
     return 0
 
 
@@ -606,9 +638,12 @@ def cmd_diff_stage(args: argparse.Namespace) -> int:
     """Run one diff-mode stage (D3/D4/D5/D6) or all of them (D3-D6)."""
     audit_root = _resolve_audit_root(args)
     audit_root.mkdir(parents=True, exist_ok=True)
+    resolved = _resolve_diff_request(args)
     try:
-        scope = build_diff_scope(args.repo_root, baseline=args.baseline, target=args.target,
-                                 risky_symbols=args.symbol or [])
+        scope = build_diff_scope(args.repo_root, baseline=resolved.baseline,
+                                 target=resolved.target,
+                                 risky_symbols=args.symbol or [],
+                                 resolved_range=resolved)
     except Exception as exc:  # noqa: BLE001
         _err(str(exc))
 
@@ -621,8 +656,8 @@ def cmd_diff_stage(args: argparse.Namespace) -> int:
     payloads: dict[str, Any] = {}
     for stage in stages:
         if stage == "D3":
-            history = analyze_path_history(args.repo_root, baseline=args.baseline,
-                                           target=args.target, paths=changed_paths)
+            history = analyze_path_history(args.repo_root, baseline=resolved.baseline,
+                                           target=resolved.target, paths=changed_paths)
             payload = {k: v.to_dict() for k, v in history.items()}
         elif stage == "D4":
             payload = structured_blast_radius(args.repo_root, changed_paths=changed_paths,
@@ -643,6 +678,7 @@ def cmd_diff_stage(args: argparse.Namespace) -> int:
         payloads[stage] = payload
 
     _emit({"ok": True, "command": "diff.stage", "stages": stages,
+           **resolved.to_dict(),
            "changed": len(scope.changed), "artifacts": written,
            "summary": {
                "D3_paths_with_history": len(payloads.get("D3", {})),
@@ -908,6 +944,26 @@ def build_parser() -> argparse.ArgumentParser:
         kwargs.setdefault("parents", [audit_root_parent])
         return sub.add_parser(name, **kwargs)
 
+    def add_diff_selector_args(parser: argparse.ArgumentParser) -> None:
+        """D0 inputs, shared by `diff scope` and `diff stage`.
+
+        Exactly one of the four forms is accepted; `resolve_diff_range` enforces
+        it rather than argparse, because the error message matters more than the
+        exit path and the rule ("one selector, not two") is worth stating once.
+        """
+        parser.add_argument("--commit", default=None,
+                            help="audit the change this one commit introduced (sha^ .. sha)")
+        parser.add_argument("--since", default=None,
+                            help="audit everything since a baseline sha/tag (ref .. HEAD)")
+        parser.add_argument("--base", default=None,
+                            help="PR base: diffed from merge-base(base, head), not from base")
+        parser.add_argument("--head", default=None,
+                            help="PR head (required with --base)")
+        parser.add_argument("--baseline", default=None,
+                            help="explicit baseline revision (escape hatch; pair with --target)")
+        parser.add_argument("--target", default=None,
+                            help="explicit target revision (escape hatch; pair with --baseline)")
+
     # state
     s_state = add_sub("state", help="audit-state operations")
     s_state_sub = s_state.add_subparsers(dest="subcommand", required=True)
@@ -1003,18 +1059,16 @@ def build_parser() -> argparse.ArgumentParser:
     s_diff = add_sub("diff", help="diff mode operations")
     s_diff_sub = s_diff.add_subparsers(dest="subcommand", required=True)
     s_diff_scope = s_diff_sub.add_parser("scope", parents=[audit_root_parent],
-                                           help="build diff scope")
+                                           help="resolve the change-set and build diff scope (D0-D2)")
     s_diff_scope.add_argument("--repo-root", required=True)
-    s_diff_scope.add_argument("--baseline", required=True)
-    s_diff_scope.add_argument("--target", required=True)
+    add_diff_selector_args(s_diff_scope)
     s_diff_scope.add_argument("--symbol", action="append", default=[],
                               help="risky symbol to trace (may repeat)")
     s_diff_scope.set_defaults(func=cmd_diff_scope)
     s_diff_stage = s_diff_sub.add_parser("stage", parents=[audit_root_parent],
                                          help="run diff-mode stages D3/D4/D5/D6")
     s_diff_stage.add_argument("--repo-root", required=True)
-    s_diff_stage.add_argument("--baseline", required=True)
-    s_diff_stage.add_argument("--target", required=True)
+    add_diff_selector_args(s_diff_stage)
     s_diff_stage.add_argument("--stage", action="append", default=[],
                               choices=["D3", "D4", "D5", "D6", "all"],
                               help="stage to run (repeatable; default all of D3-D6)")

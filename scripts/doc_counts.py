@@ -88,7 +88,22 @@ def unit_test_count(root: Path) -> int:
 def eval_metrics(root: Path) -> dict:
     expected = json.loads((root / "evals" / "expected.json").read_text(encoding="utf-8"))
     fixtures = expected.get("fixtures", [])
-    return {"eval_fixtures": len(fixtures)}
+
+    long_horizon_dir = root / "evals" / "long_horizon"
+    long_horizon_scenarios = sum(
+        1 for _ in long_horizon_dir.glob("*/scenario.json")
+    ) if long_horizon_dir.is_dir() else 0
+
+    incremental_dir = root / "evals" / "incremental"
+    incremental_scenarios = sum(
+        1 for _ in incremental_dir.glob("*/scenario.json")
+    ) if incremental_dir.is_dir() else 0
+
+    return {
+        "eval_fixtures": len(fixtures),
+        "long_horizon_scenarios": long_horizon_scenarios,
+        "incremental_scenarios": incremental_scenarios,
+    }
 
 
 def runtime_version(root: Path) -> str:
@@ -179,7 +194,9 @@ BLOCK_ROWS = (
     ("per-class vulnerability references", "vuln_class_files"),
     ("operator methodologies", "methodology_files"),
     ("runtime wordlists", "wordlist_files"),
-    ("eval fixtures", "eval_fixtures"),
+    ("eval fixtures (positive / negative / ambiguous)", "eval_fixtures"),
+    ("long-horizon replay scenarios", "long_horizon_scenarios"),
+    ("incremental replay scenarios", "incremental_scenarios"),
     ("first-class roles", "first_class_roles"),
     ("phase gates declared", "phase_gates"),
     ("runtime version", "runtime_version"),

@@ -38,6 +38,11 @@
         "claim": {"type": "string", "minLength": 1},
         "evidence_refs": {"$ref": "#/$defs/RefList"},
         "source_refs": {"$ref": "#/$defs/RefList"},
+        "diff_evidence_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pointer to the diff-scope.json artifact that justifies this fact in an incremental round (the form is 'diff-scope.json:scope_type=…:baseline=…:target=…'). The runtime stores it on the ledger fact so the L7 closure gate can tell 'changed code' evidence from 'unchanged code' evidence."
+        },
         "confidence": {"enum": ["unknown", "low", "medium", "high"]}
       }
     },
@@ -51,7 +56,12 @@
         "status": {"enum": ["unverified", "supported", "disproved"]},
         "evidence_refs": {"$ref": "#/$defs/RefList"},
         "source_refs": {"$ref": "#/$defs/RefList"},
-        "depended_on_by": {"$ref": "#/$defs/RefList"}
+        "depended_on_by": {"$ref": "#/$defs/RefList"},
+        "diff_evidence_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pointer to the diff-scope.json artifact that triggered this assumption (incremental rounds). Without it a 'disproved' status has no machine-readable connection to the change-set that disproved it."
+        }
       }
     },
     "AssumptionUpdate": {
@@ -63,7 +73,12 @@
         "status": {"enum": ["unverified", "supported", "disproved"]},
         "evidence_refs": {"$ref": "#/$defs/RefList"},
         "source_refs": {"$ref": "#/$defs/RefList"},
-        "depended_on_by": {"$ref": "#/$defs/RefList"}
+        "depended_on_by": {"$ref": "#/$defs/RefList"},
+        "diff_evidence_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pointer to the diff-scope.json artifact that triggered this status change. Required when status is 'disproved' in a diff round, optional otherwise."
+        }
       }
     },
     "QuestionAdd": {

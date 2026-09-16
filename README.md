@@ -171,18 +171,20 @@ Sources that are not vendored (`Claude-BugHunter`, `strix`) currently carry an
 <!-- BEGIN auto-counts — generated, do not edit by hand
 | Metric | Value |
 |--------|-------|
-| reference files (4 sub-directories) | 102 |
-| manifest items (incl. inline agents) | 132 |
+| reference files (4 sub-directories) | 103 |
+| manifest items (incl. inline agents) | 133 |
 | inline agent templates | 28 |
 | per-class hunting methodologies | 58 |
 | per-class vulnerability references | 29 |
-| operator methodologies | 10 |
+| operator methodologies | 11 |
 | runtime wordlists | 5 |
-| eval fixtures | 30 |
+| eval fixtures (positive / negative / ambiguous) | 30 |
+| long-horizon replay scenarios | 1 |
+| incremental replay scenarios | 1 |
 | first-class roles | 7 |
 | phase gates declared | 38 |
 | runtime version | 1.4.0 |
-| commands: full / partial / stub | 8 / 5 / 4 |
+| commands: full / partial / stub | 9 / 4 / 4 |
 <!-- END auto-counts -->
 
 Refresh with `python scripts/doc_counts.py --write`; CI runs

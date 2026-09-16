@@ -45,6 +45,11 @@
         "evidence_refs": {"$ref": "#/$defs/RefList"},
         "source_refs": {"$ref": "#/$defs/RefList"},
         "confidence": {"enum": ["unknown", "low", "medium", "high"]},
+        "diff_evidence_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pointer to the diff-scope.json artifact that justifies this fact in an incremental round (the form is 'diff-scope.json:scope_type=…:baseline=…:target=…'). Set by the runtime from a research-delta's diff_evidence_ref. Distinguishes 'changed code' evidence from 'unchanged code' evidence so a resumed audit can tell a stale fact from a current one."
+        },
         "created_at": {"type": "string"},
         "updated_at": {"type": "string"}
       }
@@ -70,6 +75,11 @@
         "depended_on_by": {
           "$ref": "#/$defs/RefList",
           "description": "Informational: recomputed by the runtime from blocked paths whose blocker names this assumption. Not the source of truth for reopen decisions."
+        },
+        "diff_evidence_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pointer to the diff-scope.json artifact that triggered the most recent status change. Set when the assumption moves to 'disproved' or 'supported' in an incremental round, so a later reader can answer 'why did this reopen' without re-deriving it from two bare SHAs."
         },
         "created_at": {"type": "string"},
         "updated_at": {"type": "string"}
