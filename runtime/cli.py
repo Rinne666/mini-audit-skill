@@ -59,6 +59,7 @@ from .gates import GateError, GateResult, GateRunner, gate_for, has_gate
 from . import attack_graph as graph_mod
 from . import objective as objective_mod
 from . import research_state as research_mod
+from . import search_saturation as saturation_mod
 from .attack_graph import GraphError
 from .objective import ObjectiveError
 from .research_state import ResearchError
@@ -164,8 +165,9 @@ def _run_phase_gate(audit_root: Path, phase: str, workdir: Path,
         ]
 
     runner = GateRunner(workdir=workdir)
-    # No pre-seeded semantic data: every semantic check declares its own
-    # artifact and the runner loads it from disk (v1.1 §3).
+    # Cross-artifact sources (the Search Governance bundle) are assembled by the
+    # runner itself from the same workdir, so a gate definition stays
+    # self-contained and calling the runner directly behaves identically.
     return runner.run(gate_def, semantic_data={}, ctx=ctx)
 
 
@@ -820,6 +822,72 @@ def cmd_research_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_graph_or_err(audit_root: Path, operation: str) -> dict[str, Any]:
+    """Read the attack graph under a shared lock, with the generation checked.
+
+    Going through ``load_research_state`` rather than reading the file directly
+    means a graph left behind by an interrupted apply is refused here too,
+    instead of being traversed as if it were coherent.
+    """
+    with search_governance_lock(audit_root, exclusive=False, operation=operation):
+        state = research_mod.load_research_state(audit_root)
+    graph = state.get("graph")
+    if graph is None:
+        _err(f"no attack graph at {graph_mod.graph_path(audit_root)}; "
+             "declare an objective before querying the graph")
+        raise SystemExit(2)
+    return graph
+
+
+def cmd_graph_show(args: argparse.Namespace) -> int:
+    audit_root = _resolve_audit_root(args)
+    graph = _load_graph_or_err(audit_root, "graph show")
+    _emit({"ok": True, "command": "graph.show",
+           "graph": str(graph_mod.graph_path(audit_root)),
+           "summary": graph_mod.graph_summary(graph)})
+    return 0
+
+
+def cmd_graph_path(args: argparse.Namespace) -> int:
+    audit_root = _resolve_audit_root(args)
+    graph = _load_graph_or_err(audit_root, "graph path")
+    path = graph_mod.verified_path(graph, args.from_ref, args.to_ref)
+    _emit({"ok": True, "command": "graph.path", "graph": str(graph_mod.graph_path(audit_root)),
+           **path})
+    return 0
+
+
+def cmd_graph_goals(args: argparse.Namespace) -> int:
+    audit_root = _resolve_audit_root(args)
+    graph = _load_graph_or_err(audit_root, "graph goals")
+    _emit({"ok": True, "command": "graph.goals", **graph_mod.paths_to_goals(graph),
+           "distance": graph_mod.goal_distance(graph)["hops_to_goal"]})
+    return 0
+
+
+def cmd_graph_frontier(args: argparse.Namespace) -> int:
+    audit_root = _resolve_audit_root(args)
+    graph = _load_graph_or_err(audit_root, "graph frontier")
+    reachable = graph_mod.reachable_capabilities(graph)
+    _emit({"ok": True, "command": "graph.frontier",
+           "reachable": reachable["reachable"],
+           "unreachable_verified_capabilities": reachable["unreachable_verified_capabilities"],
+           "frontier": graph_mod.blocked_frontier(graph)})
+    return 0
+
+
+def cmd_search_saturation(args: argparse.Namespace) -> int:
+    """Evaluate the completion gate and write the debt report.
+
+    The report is derived, not research state: reading is done under the shared
+    lock so the ledger and graph are one snapshot, and the write needs none.
+    """
+    audit_root = _resolve_audit_root(args)
+    workdir = Path(getattr(args, "workdir", None) or ".").resolve()
+    _emit(saturation_mod.report(audit_root, workdir=workdir))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mini-audit-runtime",
@@ -1042,6 +1110,41 @@ def build_parser() -> argparse.ArgumentParser:
     s_res_status = s_research_sub.add_parser("status", parents=[audit_root_parent],
                                              help="summarise the research state")
     s_res_status.set_defaults(func=cmd_research_status)
+
+    # graph (Search Governance attack graph queries, R2-6 / Phase B)
+    s_graph = add_sub("graph", help="attack graph queries")
+    s_graph_sub = s_graph.add_subparsers(dest="subcommand", required=True)
+
+    s_gr_show = s_graph_sub.add_parser("show", parents=[audit_root_parent],
+                                       help="summarise the attack graph")
+    s_gr_show.set_defaults(func=cmd_graph_show)
+
+    s_gr_path = s_graph_sub.add_parser("path", parents=[audit_root_parent],
+                                       help="shortest verified-edge path between two nodes")
+    s_gr_path.add_argument("--from", dest="from_ref", required=True,
+                           help="canonical node id (CAP-002) or semantic key")
+    s_gr_path.add_argument("--to", dest="to_ref", required=True,
+                           help="canonical node id (GOAL-001) or semantic key")
+    s_gr_path.set_defaults(func=cmd_graph_path)
+
+    s_gr_goals = s_graph_sub.add_parser("goals", parents=[audit_root_parent],
+                                        help="which declared goals are verified reachable")
+    s_gr_goals.set_defaults(func=cmd_graph_goals)
+
+    s_gr_frontier = s_graph_sub.add_parser("frontier", parents=[audit_root_parent],
+                                           help="next unverified edges at the reachable boundary")
+    s_gr_frontier.set_defaults(func=cmd_graph_frontier)
+
+    # search (Search Governance — verification only; planning is a Skill policy)
+    s_search = add_sub("search", help="search governance verification")
+    s_search_sub = s_search.add_subparsers(dest="subcommand", required=True)
+
+    s_search_sat = s_search_sub.add_parser(
+        "saturation", parents=[audit_root_parent],
+        help="evaluate the completion gate and write mini-audit/search-saturation.json")
+    s_search_sat.add_argument("--workdir", default=".",
+                              help="directory evidence references resolve against (default: cwd)")
+    s_search_sat.set_defaults(func=cmd_search_saturation)
 
     return p
 

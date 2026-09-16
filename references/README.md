@@ -2,7 +2,7 @@
 
 # mini-audit references
 
-4 sub-directories + 1 cross-reference index, total **100 reference files (~1.8MB)** plus the 28 inline Piolium agents already ported.
+4 sub-directories + 1 cross-reference index, total **102 reference files (~1.7MB)** plus the 28 inline Piolium agents already ported.
 
 ## Layout
 
@@ -20,8 +20,8 @@ references/
 ├── vuln-classes/                ← 29 files, ~286KB
 │   └── <class>.md               ← strix vulnerability class reference
 │
-├── methodology/                 ← 8 files, ~220KB
-│   └── <name>.md                ← cross-class judging + Claude-BugHunter operator methodology
+├── methodology/                 ← 10 files, ~262KB
+│   └── <name>.md                ← cross-class judging + operator methodology + the Search Governance policies
 │
 └── wordlists/                   ← 5 files, ~350KB
     └── <name>.txt               ← runtime enumeration resources
@@ -39,6 +39,8 @@ references/
 | cold-verifier re-validating after chamber | `methodology/permission-delta-judging.md` (class-agnostic, loaded intentionally) |
 | poc-builder / report-assembler about to capture evidence | `methodology/evidence-hygiene.md` + `methodology/report-writing.md` |
 | L5 / P8 deep-probe fan-out | `methodology/recon-scope-triage.md` |
+| choosing what the next round should investigate | `methodology/search-governance.md` |
+| about to write or merge a research delta | `methodology/research-state.md` |
 | Any sub-agent enumerating endpoints / params | `wordlists/common.txt` + `wordlists/raft-medium-directories.txt` |
 
 ## 28 inline Piolium agents (Piolium agents that are NOT first-class mavis roles)
@@ -135,7 +137,7 @@ vuln-classes/weak_password_detection.md     vuln-classes/xss.md
 vuln-classes/xxe.md
 ```
 
-## 8 methodologies (1 cross-class judging + 7 Claude-BugHunter)
+## 10 methodologies (1 cross-class judging + 7 Claude-BugHunter + 2 original Search Governance policies)
 
 ```
 methodology/permission-delta-judging.md ← cross-class meta-rule: Actor→Boundary→Delta; one-sentence test; counterfactual test; 10 anti-patterns (MUST-LOAD pre-flight for chamber + cold-verifier)
@@ -146,6 +148,8 @@ methodology/report-writing.md        ← disclosure-ready report structure
 methodology/triage-validation.md     ← candidate finding triage
 methodology/recon-scope-triage.md    ← scope enumeration for probe fan-out
 methodology/web2-recon.md            ← web-app recon methodology
+methodology/search-governance.md     ← Search Governance v1: inputs, P0/P1/P2 next-round ranking rules, intent→delta handoff, budget behaviour (original)
+methodology/research-state.md        ← Search Governance v1: the 5 canonical objects, worker write protocol, single-writer contract, research-delta transaction (original)
 ```
 
 `redteam-mindset.md`, `evidence-hygiene.md`, and `permission-delta-judging.md` are the **non-negotiable pre-flights** — load them at the start of every mini-audit session. The first two govern behavior, the third governs the VALID/INVALID verdict.
@@ -169,20 +173,20 @@ Sub-agents read these via `Bash cat` or `Read` tool. They are NOT prompt templat
 | Inline Piolium agents (28) | `/Users/rinne/Desktop/piolium/agents/*.md` (frontmatter + codex-trim stripped) |
 | hunting/ (58) | `cybermes/knowledge/Claude-BugHunter/skills/hunt-*/SKILL.md` |
 | vuln-classes/ (29) | `strix/strix/skills/vulnerabilities/*.md` |
-| methodology/ (8) | 7 from `cybermes/knowledge/Claude-BugHunter/skills/{bug-bounty,redteam-mindset,evidence-hygiene,report-writing,triage-validation,recon-scope-triage,web2-recon}/SKILL.md` + 1 original (`permission-delta-judging.md`, distilled from admin FP rejections) |
+| methodology/ (10) | 7 from `cybermes/knowledge/Claude-BugHunter/skills/{bug-bounty,redteam-mindset,evidence-hygiene,report-writing,triage-validation,recon-scope-triage,web2-recon}/SKILL.md` + 3 original (`permission-delta-judging.md` distilled from admin FP rejections; `search-governance.md` and `research-state.md` from the Search Governance v1 design) |
 | wordlists/ (5) | `cybermes/tools/wordlists/*.txt` |
 
-Piolium has no equivalent for any of the 100 new files (the 4 sub-directories) — these are pure additions that complement the 28 inline Piolium agents already ported.
+Piolium has no equivalent for any of the 102 new files (the 4 sub-directories) — these are pure additions that complement the 28 inline Piolium agents already ported.
 
-Machine-readable provenance (source repo/commit/path, license, modified flag, import date) for every one of the 130 files lives in `MANIFEST.json`; the source declarations and commit map live in `PROVENANCE.json`. Regenerate with `scripts/manifest.py`, verify with `scripts/check-manifest.py --strict`.
+Machine-readable provenance (source repo/commit/path, license, modified flag, import date) for every one of the 132 files lives in `MANIFEST.json`; the source declarations and commit map live in `PROVENANCE.json`. Regenerate with `scripts/manifest.py`, verify with `scripts/check-manifest.py --strict`.
 
-## Total: 100 reference files (~1.8MB)
+## Total: 102 reference files (~1.7MB)
 
 The full audit pipeline (`mini-audit`) now has access to:
 - 7 first-class mavis agents (chamber debate + SAST + cold verification + permission-delta re-judgment)
 - 28 inline Piolium role specs
 - 58 per-class hunting methodologies
 - 29 per-class vulnerability references
-- 8 operator methodology references (incl. permission-delta judging)
+- 10 operator methodology references (incl. permission-delta judging + the 2 Search Governance policies)
 - 5 runtime wordlists
 - 6 supporting skills (`codeql`, `semgrep`, `sarif-parsing`, `vuln-report`, `security-threat-model`, `zeroize-audit`)

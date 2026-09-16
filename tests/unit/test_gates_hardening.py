@@ -123,15 +123,20 @@ def test_unknown_semantic_check_fails(tmp_path: Path) -> None:
 
 
 def _chamber(cid: str, *, closed: bool = True, with_boundary: bool = True,
-             with_research: bool = True) -> dict:
+             with_research: bool = True, structural: bool = True) -> dict:
     cand = {"candidate_id": f"cand-{cid}", "verdict": "VALID"}
     if with_boundary:
         cand["boundary_sentence"] = "an actor who could only read own rows can now read any row"
     if with_research:
         # Search Governance v1 (R2-2): the L6 gate, not the candidate schema,
         # requires an accepted candidate to declare its research value.
-        cand["research"] = {"local_validity": "verified", "role": "chain_seed",
-                            "chain_potential": "high"}
+        research = {"local_validity": "verified", "role": "chain_seed",
+                    "chain_potential": "high"}
+        if structural:
+            # A chain_seed must say how it connects to a chain; without this the
+            # role is only a label.
+            research["grants_capabilities"] = ["control_scalar_parameter"]
+        cand["research"] = research
     return {
         "id": cid,
         "debate_status": "closed" if closed else "open",
@@ -151,6 +156,38 @@ def test_l6_rejects_an_accepted_candidate_without_research(tmp_path: Path) -> No
     assert not result.passed
     assert any("research metadata" in f.message for f in result.failures), \
         [f.message for f in result.failures]
+
+
+def test_l6_rejects_a_chain_seed_that_declares_no_relationship(tmp_path: Path) -> None:
+    """`chain_seed` without requires/grants/blocked_by asserts a connection it
+    does not name — the role has to have structural meaning to be worth gating."""
+    _write(tmp_path / "mini-audit/chamber-workspace/c1/debate.json",
+           _chamber("c1", structural=False))
+    result = GateRunner(workdir=tmp_path).run(gate_for("L6"))
+    assert not result.passed
+    assert any("only a label" in f.message for f in result.failures), \
+        [f.message for f in result.failures]
+
+
+def test_l6_rejects_partial_research_metadata(tmp_path: Path) -> None:
+    chamber = _chamber("c1")
+    del chamber["valid_candidates"][0]["research"]["chain_potential"]
+    _write(tmp_path / "mini-audit/chamber-workspace/c1/debate.json", chamber)
+    result = GateRunner(workdir=tmp_path).run(gate_for("L6"))
+    assert not result.passed
+    assert any("incomplete research metadata" in f.message for f in result.failures), \
+        [f.message for f in result.failures]
+
+
+def test_l6_accepts_a_standalone_candidate_without_relationships(tmp_path: Path) -> None:
+    """Only the structural roles carry the extra requirement."""
+    chamber = _chamber("c1")
+    research = chamber["valid_candidates"][0]["research"]
+    research["role"] = "standalone"
+    research.pop("grants_capabilities", None)
+    _write(tmp_path / "mini-audit/chamber-workspace/c1/debate.json", chamber)
+    result = GateRunner(workdir=tmp_path).run(gate_for("L6"))
+    assert result.passed, [f.message for f in result.failures]
 
 
 def test_glob_json_aggregated_and_semantically_validated(tmp_path: Path) -> None:

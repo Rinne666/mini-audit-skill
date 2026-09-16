@@ -56,7 +56,9 @@ def graph_path(audit_root: os.PathLike[str] | str) -> Path:
 
 
 def empty_graph(*, audit_id: Optional[str] = None) -> dict[str, Any]:
-    graph: dict[str, Any] = {"schema_version": 1, "nodes": [], "edges": []}
+    graph: dict[str, Any] = {
+        "schema_version": 1, "generation": 1, "nodes": [], "edges": [],
+    }
     if audit_id:
         graph["audit_id"] = audit_id
     return graph
@@ -259,6 +261,342 @@ def require_consistent(graph: Mapping[str, Any]) -> None:
     problems = inconsistencies(graph)
     if problems:
         raise GraphError("attack graph is inconsistent: " + "; ".join(problems[:5]))
+
+
+# ---------------------------------------------------------------------------
+# Traversal
+# ---------------------------------------------------------------------------
+
+#: Relations walked *forwards* when asking "what else can the attacker get?".
+#:
+#: ``requires`` is deliberately not here. It points from a capability to its
+#: prerequisite, so holding the prerequisite is what unlocks the dependent:
+#: it is walked **backwards**. Reading it forwards would mean "holding C-17
+#: grants you its prerequisite", which is the opposite of what the relation
+#: says — and it would make the `prerequisite` role, and therefore blocked-path
+#: reopening, mean nothing.
+FORWARD_RELATIONS: tuple[str, ...] = (
+    "enables", "escalates_to", "bypasses", "breaks_assumption",
+)
+REVERSE_RELATIONS: tuple[str, ...] = ("requires",)
+
+TRAVERSABLE_STATUS = "verified"
+FRONTIER_STATUSES = ("proposed", "blocked")
+
+#: Everything except `refuted`. Used when the question is "how far *could* this
+#: be", not "how far is this proven to be" — a proposed edge is a hypothesis
+#: worth ranking, while a refuted one is a known dead end.
+POTENTIAL_STATUSES: tuple[str, ...] = ("verified", "proposed", "blocked")
+
+
+def _traversal_edges(graph: Mapping[str, Any],
+                     statuses: Sequence[str] = (TRAVERSABLE_STATUS,),
+                     ) -> list[tuple[str, str, dict[str, Any]]]:
+    """``(from, to, edge)`` pairs after applying the per-relation direction rule.
+
+    Sorted, so every BFS in this module is deterministic — a graph traversal
+    whose answer depends on dict ordering is untestable.
+    """
+    pairs: list[tuple[str, str, dict[str, Any]]] = []
+    for edge in graph.get("edges", []):
+        if not isinstance(edge, dict) or edge.get("status") not in statuses:
+            continue
+        relation = edge.get("relation")
+        src, dst = str(edge.get("from")), str(edge.get("to"))
+        if relation in FORWARD_RELATIONS:
+            pairs.append((src, dst, edge))
+        elif relation in REVERSE_RELATIONS:
+            pairs.append((dst, src, edge))
+    return sorted(pairs, key=lambda item: (item[0], item[1], str(item[2].get("id"))))
+
+
+def traversal_neighbours(graph: Mapping[str, Any], node_id: str,
+                         statuses: Sequence[str] = (TRAVERSABLE_STATUS,),
+                         ) -> list[dict[str, Any]]:
+    """Edges leading *out of* ``node_id`` in the traversal sense.
+
+    The public form of :func:`_traversal_edges` filtered to one node, so
+    callers asking "does anything consume this capability?" do not have to
+    reach into a private helper or re-derive the direction rule.
+    """
+    return [edge for parent, _child, edge in _traversal_edges(graph, tuple(statuses))
+            if parent == node_id]
+
+
+def _bfs(pairs: Sequence[tuple[str, str, dict[str, Any]]], starts: Iterable[str],
+         ) -> tuple[dict[str, int], dict[str, tuple[str, dict[str, Any]]]]:
+    """Breadth-first distances plus the first arriving (previous, edge)."""
+    adjacency: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for src, dst, edge in pairs:
+        adjacency.setdefault(src, []).append((dst, edge))
+
+    distance: dict[str, int] = {}
+    came_from: dict[str, tuple[str, dict[str, Any]]] = {}
+    queue: list[str] = []
+    for start in sorted(set(starts)):
+        if start not in distance:
+            distance[start] = 0
+            queue.append(start)
+
+    cursor = 0
+    while cursor < len(queue):
+        node = queue[cursor]
+        cursor += 1
+        for neighbour, edge in adjacency.get(node, []):
+            if neighbour in distance:
+                continue
+            distance[neighbour] = distance[node] + 1
+            came_from[neighbour] = (node, edge)
+            queue.append(neighbour)
+    return distance, came_from
+
+
+def start_nodes(graph: Mapping[str, Any]) -> list[str]:
+    """Where reachability begins: the principal and the objective's capabilities.
+
+    These are definitional — the objective declares that this principal holds
+    these capabilities before any bug is found — so they are never required to
+    carry exploit evidence of their own.
+    """
+    starts: list[str] = []
+    for node in graph.get("nodes", []):
+        if not isinstance(node, Mapping):
+            continue
+        if node.get("type") == "principal":
+            starts.append(str(node.get("id")))
+        elif node.get("type") == "capability" and node.get("origin") == "objective":
+            starts.append(str(node.get("id")))
+    return sorted(starts)
+
+
+def goal_nodes(graph: Mapping[str, Any]) -> list[str]:
+    return sorted(str(n.get("id")) for n in graph.get("nodes", [])
+                  if isinstance(n, Mapping) and n.get("type") == "goal")
+
+
+def _established(graph: Mapping[str, Any], node_id: str) -> bool:
+    """Is this node something the attacker is *demonstrated* to have?
+
+    A node counts only when its own status is ``verified`` — the same word, and
+    the same meaning, as for an edge. Without this, a capability marked
+    ``refuted`` (investigated, found not to exist) would still be reported as
+    held because some edge points at it, and a ``proposed`` one would be
+    promoted by an edge alone. Both readings are fail-open, and the second also
+    makes the node status enum decorative.
+    """
+    node = find_node_by_id(graph, node_id)
+    return node is not None and node.get("status") == TRAVERSABLE_STATUS
+
+
+def _established_pairs(graph: Mapping[str, Any],
+                       statuses: Sequence[str] = (TRAVERSABLE_STATUS,),
+                       ) -> list[tuple[str, str, dict[str, Any]]]:
+    """:func:`_traversal_edges`, keeping only hops between established nodes.
+
+    Used by the queries that answer "what does the attacker hold?" and "is this
+    demonstrated?", where an unestablished waypoint means the route is not
+    established either. Deliberately *not* used by :func:`blocked_frontier`,
+    whose whole purpose is to look at edges whose far side is not yet held —
+    applying the rule there would filter out every frontier edge.
+    """
+    return [pair for pair in _traversal_edges(graph, statuses)
+            if _established(graph, pair[0]) and _established(graph, pair[1])]
+
+
+def verified_reachable(graph: Mapping[str, Any],
+                       starts: Optional[Iterable[str]] = None) -> set[str]:
+    """Node ids reachable from *starts* using **verified** edges and nodes only.
+
+    proposed / blocked / refuted edges are all excluded: a proposed edge is a
+    hypothesis, and letting one make a capability "reachable" is exactly the
+    "treat a claim as evidence" failure this runtime exists to prevent. The
+    intermediate nodes must be established too — see :func:`_established`.
+    """
+    seed = [node for node in (list(starts) if starts is not None else start_nodes(graph))
+            if _established(graph, node)]
+    distance, _ = _bfs(_established_pairs(graph), seed)
+    return set(distance)
+
+
+def reachable_capabilities(graph: Mapping[str, Any]) -> dict[str, Any]:
+    """Which capabilities the attacker is *demonstrated* to hold.
+
+    Also reports verified capabilities that are **not** reachable. Those are the
+    interesting ones: something established them as real, but nothing connects
+    them to the entry point the objective declares.
+    """
+    nodes = node_index(graph)
+    reachable = verified_reachable(graph)
+    capabilities = sorted(nid for nid, node in nodes.items()
+                          if node.get("type") == "capability")
+    return {
+        "start_nodes": start_nodes(graph),
+        "reachable": sorted(reachable),
+        "reachable_capabilities": [nid for nid in capabilities if nid in reachable],
+        "unreachable_verified_capabilities": [
+            nid for nid in capabilities
+            if nid not in reachable and nodes[nid].get("status") == TRAVERSABLE_STATUS
+        ],
+    }
+
+
+def verified_path(graph: Mapping[str, Any], src: str, dst: str) -> dict[str, Any]:
+    """Shortest path from *src* to *dst* using verified edges and nodes only.
+
+    Same rule as :func:`verified_reachable`, so the two cannot disagree about
+    whether something is demonstrated. ``src``/``dst`` may be canonical ids or
+    semantic keys. Raises :class:`GraphError` when a reference names no node —
+    that is a caller error, not a negative answer, and conflating the two would
+    let a typo read as "unreachable".
+    """
+    from_node = resolve_node_ref(graph, src)
+    to_node = resolve_node_ref(graph, dst)
+    if from_node is None:
+        raise GraphError(f"no node matches reference {src!r}")
+    if to_node is None:
+        raise GraphError(f"no node matches reference {dst!r}")
+
+    start_id, goal_id = str(from_node.get("id")), str(to_node.get("id"))
+    if goal_id != start_id and not _established(graph, goal_id):
+        return {"reachable": False, "from": start_id, "to": goal_id,
+                "nodes": [], "edges": [], "hops": None}
+    distance, came_from = _bfs(_established_pairs(graph), [start_id])
+    if goal_id not in distance:
+        return {"reachable": False, "from": start_id, "to": goal_id,
+                "nodes": [], "edges": [], "hops": None}
+
+    node_chain = [goal_id]
+    edge_chain: list[str] = []
+    cursor = goal_id
+    while cursor != start_id:
+        previous, edge = came_from[cursor]
+        edge_chain.append(str(edge.get("id")))
+        node_chain.append(previous)
+        cursor = previous
+    return {
+        "reachable": True,
+        "from": start_id,
+        "to": goal_id,
+        "hops": distance[goal_id],
+        "nodes": list(reversed(node_chain)),
+        "edges": list(reversed(edge_chain)),
+    }
+
+
+def paths_to_goals(graph: Mapping[str, Any]) -> dict[str, Any]:
+    """Which declared goals are demonstrated reachable, and by what path."""
+    nodes = node_index(graph)
+    starts = start_nodes(graph)
+    reachable: list[dict[str, Any]] = []
+    unreachable: list[dict[str, Any]] = []
+    for goal in goal_nodes(graph):
+        best: Optional[dict[str, Any]] = None
+        for start in starts:
+            path = verified_path(graph, start, goal)
+            if path["reachable"] and (best is None or path["hops"] < best["hops"]):
+                best = {**path, "start": start}
+        entry = {"goal": goal, "name": nodes.get(goal, {}).get("name")}
+        if best is None:
+            unreachable.append(entry)
+        else:
+            reachable.append({**entry, "path": best})
+    return {
+        "start_nodes": starts,
+        "reachable_goals": reachable,
+        "unreachable_goals": unreachable,
+    }
+
+
+def goal_distance(graph: Mapping[str, Any],
+                  statuses: Sequence[str] = (TRAVERSABLE_STATUS,)) -> dict[str, Any]:
+    """Hops from each node to the nearest goal (``None``/absent = no route).
+
+    Computed by walking the graph backwards from the goals, so the number
+    answers "how close is this node to something we are trying to reach".
+
+    ``statuses`` decides what the number *means*, and the two readings are both
+    needed:
+
+    * ``("verified",)`` — **proven** distance. This is what a closure claim
+      must use: a path is either demonstrated or it is not.
+    * :data:`POTENTIAL_STATUSES` — **possible** distance, counting proposed and
+      blocked edges. This is what prioritisation must use. With the strict
+      reading, every node is "unreachable to goal" until the goal is finally
+      taken, so "does this block a path near a goal" would be false for the
+      entire search and the rule that depends on it would never fire.
+    """
+    pairs = _traversal_edges(graph, tuple(statuses))
+    reversed_pairs = [(dst, src, edge) for src, dst, edge in pairs]
+    distance, _ = _bfs(reversed_pairs, goal_nodes(graph))
+    return {
+        "hops_to_goal": dict(sorted(distance.items())),
+        "unreachable_nodes": sorted(
+            str(n.get("id")) for n in graph.get("nodes", [])
+            if isinstance(n, Mapping) and str(n.get("id")) not in distance
+        ),
+    }
+
+
+def blocked_frontier(graph: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The next edges that would move the search forward, and what they unlock.
+
+    An edge at the boundary of the verified region whose status is still
+    `proposed` or `blocked` is the cheapest place to spend the next round: the
+    capability on the far side is already one step from something we hold.
+    `refuted` edges are excluded — they are known dead ends.
+
+    Each entry names the edge's own endpoints (``edge_from``/``edge_to``) *and*
+    the traversal sense (``held`` → ``unlocks``). The two differ for a
+    `requires` edge, and reporting only one of them would make the output
+    contradict the graph file.
+    """
+    reachable = verified_reachable(graph)
+    nodes = node_index(graph)
+    frontier: list[dict[str, Any]] = []
+    for held, unlocked, edge in _traversal_edges(graph, FRONTIER_STATUSES):
+        if held not in reachable or unlocked in reachable:
+            continue
+        node = nodes.get(unlocked, {})
+        frontier.append({
+            "edge": str(edge.get("id")),
+            "key": edge.get("key"),
+            "relation": edge.get("relation"),
+            "status": edge.get("status"),
+            "edge_from": edge.get("from"),
+            "edge_to": edge.get("to"),
+            "held": held,
+            "unlocks": unlocked,
+            "unlocks_type": node.get("type"),
+            "unlocks_name": node.get("name"),
+            "via_candidate": edge.get("via_candidate"),
+        })
+    return sorted(frontier, key=lambda item: (item["status"] != "blocked", item["edge"]))
+
+
+def graph_summary(graph: Mapping[str, Any]) -> dict[str, Any]:
+    """One-shot description used by ``graph show``."""
+    nodes = graph.get("nodes", [])
+    by_type: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    for node in nodes:
+        if not isinstance(node, Mapping):
+            continue
+        by_type[str(node.get("type"))] = by_type.get(str(node.get("type")), 0) + 1
+        by_status[str(node.get("status"))] = by_status.get(str(node.get("status")), 0) + 1
+    edge_status: dict[str, int] = {}
+    for edge in graph.get("edges", []):
+        if isinstance(edge, Mapping):
+            edge_status[str(edge.get("status"))] = edge_status.get(str(edge.get("status")), 0) + 1
+    return {
+        "generation": graph.get("generation"),
+        "nodes": len(nodes),
+        "edges": len(graph.get("edges", [])),
+        "nodes_by_type": dict(sorted(by_type.items())),
+        "nodes_by_status": dict(sorted(by_status.items())),
+        "edges_by_status": dict(sorted(edge_status.items())),
+        "start_nodes": start_nodes(graph),
+        "goals": goal_nodes(graph),
+    }
 
 
 # ---------------------------------------------------------------------------

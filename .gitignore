@@ -40,4 +40,5 @@ mini-audit/reports/
 mini-audit/audit-objective.json
 mini-audit/search-ledger.json
 mini-audit/attack-graph.json
+mini-audit/search-saturation.json
 mini-audit/.search-governance.lock

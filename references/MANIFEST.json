@@ -34,13 +34,13 @@
       "note": "upstream not vendored; confirm license before redistribution"
     }
   },
-  "item_count": 130,
+  "item_count": 132,
   "items": [
     {
       "path": "README.md",
       "kind": "index",
-      "size_bytes": 10222,
-      "sha256": "c3757be6cc3626bcfae22bd7f83533a9adcf566f23e798d6b153435a555337c5",
+      "size_bytes": 10900,
+      "sha256": "1b85844f4b0f0cd087bd14cb4f65e884f9b69b9dae9448369c6efb51318d731b",
       "source_repo": "local",
       "source_commit": "local",
       "source_path": "README.md",
@@ -1032,6 +1032,32 @@
       "license": "UNKNOWN",
       "modified": false,
       "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/research-state.md",
+      "kind": "methodology",
+      "size_bytes": 15692,
+      "sha256": "eaf7a17da807eac3d03d1c5fad5bf6dbf314378e02d76e3883e6e1c325cc065f",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/research-state.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15",
+      "note": "original; Search Governance v1 state contract (Skill-First Refactor v1)"
+    },
+    {
+      "path": "methodology/search-governance.md",
+      "kind": "methodology",
+      "size_bytes": 17552,
+      "sha256": "7d02e9688b2c2921b8f64429338c68ae35d5340afba92c4a2afa60fd004dc92e",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/search-governance.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15",
+      "note": "original; Search Governance v1 next-round ranking policy (Skill-First Refactor v1)"
     },
     {
       "path": "methodology/triage-validation.md",

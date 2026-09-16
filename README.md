@@ -60,6 +60,29 @@ The invariants that make it safe to run long:
   Neither direction rewrites the candidate's verdict.
 * **No node type the runtime cannot check.** v1 allows `principal`, `capability`
   and `goal` only; `state` was dropped rather than shipped unverified.
+* **A capability must be established in its own right.** A `verified` edge does
+  not promote a hypothesis: the destination node must be `verified` too, or a
+  `refuted` capability would still be reported as held.
+* **`requires` is walked backwards.** It points from a capability to its
+  prerequisite, so holding the prerequisite is what unlocks the dependent.
+* **Only verified edges carry a claim**, and only two mechanical conditions gate
+  completion: coverage is closed, and no P0 question is left open without
+  evidence. Everything else is reported as debt. A passing gate is called
+  `search_saturated_under_current_budget` — a floor, never "exhausted".
+
+Six layers that are easy to conflate, and are not the same thing:
+
+| Layer | Question |
+|---|---|
+| Coverage Ledger | where have we looked? |
+| Search Ledger | what do we know, suspect, and where are we stuck? |
+| Attack Graph | how do the capabilities we hold convert into one another? |
+| Search Governance | what is most worth investigating next? (a policy — `references/methodology/search-governance.md`) |
+| Review Chamber | is this candidate locally real? |
+| Permission Delta | is there a real, unpermitted boundary crossing? |
+
+A **capability is not a finding**: only the permission-delta judgement produces a
+finding, and `boundary.capability_refs` is the single bridge between the two.
 
 ```bash
 mini-audit-runtime objective init --from-proposal <path>
@@ -67,13 +90,24 @@ mini-audit-runtime objective replace --from <file> --force --reason "..."
 mini-audit-runtime objective show
 mini-audit-runtime research apply <delta.json>
 mini-audit-runtime research status
+mini-audit-runtime graph show | graph path --from R --to R | graph goals | graph frontier
+mini-audit-runtime search saturation               # writes search-saturation.json
 ```
 
-Search Governance is currently at **Phase A–D of its own plan**: research state,
-attack graph, objective bootstrap, the lock, and the L1/L6 gate integration are
-implemented and tested. The search governor, saturation reporting and the
-long-horizon replay evaluator are the remaining phases. See SKILL.md § Search
-Governance for the full contract.
+The research plane is implemented and tested: research state, the attack graph and
+its queries, the objective bootstrap and its revisions, the lock, the L1/L6 gate
+integration, the completion gate, the L7 capability-closure check, and a
+three-metric long-horizon replay eval that fails CI on a regression.
+
+**What is deliberately absent is the planner.** Ranking the next round is a policy
+(`references/methodology/search-governance.md`) that the main agent applies each round, not a
+module — a ranking rule expressed as Python is a rule only the runtime can apply,
+and it freezes a decision that is still being learned. The same reasoning fixes
+the Skill/Harness boundary: the skill declares what must be true (one canonical
+writer, a hard timeout on the sandbox) and enforces what it can; it does not
+schedule agents. See SKILL.md § "Skill / Harness / Plugin", `references/methodology/research-state.md`
+for the write protocol, and `evals/README.md` for what the long-horizon metrics do
+and do not claim.
 
 ## Repository layout
 
@@ -85,7 +119,10 @@ runtime/                              # deterministic layer (Python 3.9+, stdlib
   state.py gates.py schema.py coverage.py findings.py scheduler.py
   sandbox.py sandbox_backend.py source_identity.py diff_scope.py sarif.py export.py
   fingerprint.py atomic_io.py cli.py
-  objective.py research_state.py attack_graph.py search_lock.py   # Search Governance v1
+  objective.py research_state.py attack_graph.py search_lock.py    # Search Governance v1
+  search_closure.py search_saturation.py                           # the two L7 validators
+templates/                            # starting points for agents (objective proposal, research delta)
+references/                           # methodology, role prompts, and the Search Governance policies
 schemas/                              # JSON Schema for audit-state / finding / coverage / candidate / phase-result
                                       # + audit-objective / search-ledger / research-delta / attack-graph
 .github/workflows/ci.yml              # the checks below, run on every push / PR
@@ -96,6 +133,8 @@ scripts/
   doc_counts.py                       # derive + verify the counts quoted in the docs
   detect-tools.sh run-semgrep.sh run-codeql.sh sandbox-check.sh sandbox-run.sh
 evals/                                # regression corpus (positive / negative / ambiguous) + run.py + score.py
+  long_horizon/                       # research-delta replay scenarios
+  long_horizon_run.py                 # the three long-horizon metrics (separate evaluator)
 tests/unit/                           # runtime unit + hardening tests
 references/
   README.md                           # reference index + provenance table
@@ -132,17 +171,17 @@ Sources that are not vendored (`Claude-BugHunter`, `strix`) currently carry an
 <!-- BEGIN auto-counts — generated, do not edit by hand
 | Metric | Value |
 |--------|-------|
-| reference files (4 sub-directories) | 100 |
-| manifest items (incl. inline agents) | 130 |
+| reference files (4 sub-directories) | 102 |
+| manifest items (incl. inline agents) | 132 |
 | inline agent templates | 28 |
 | per-class hunting methodologies | 58 |
 | per-class vulnerability references | 29 |
-| operator methodologies | 8 |
+| operator methodologies | 10 |
 | runtime wordlists | 5 |
 | eval fixtures | 30 |
 | first-class roles | 7 |
 | phase gates declared | 38 |
-| runtime version | 1.2.0 |
+| runtime version | 1.4.0 |
 | commands: full / partial / stub | 8 / 5 / 4 |
 <!-- END auto-counts -->
 
@@ -159,6 +198,8 @@ push to `main` and every pull request:
 - `python scripts/check-manifest.py --strict` (manifest ↔ disk + provenance)
 - `python scripts/doc_counts.py --check` (counts quoted in the docs)
 - `python evals/run.py --self-check` (eval corpus structure)
+- `python evals/long_horizon_run.py` (replays the research-delta scenarios and
+  fails if any of the three long-horizon metrics drops below its threshold)
 - `bash -n` over `scripts/*.sh` and `compileall` over the Python sources
 
 A second job (`sandbox-containment`) stages `alpine:3.20` and runs the live

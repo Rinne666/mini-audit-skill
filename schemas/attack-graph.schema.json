@@ -2,12 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/attack-graph.schema.json",
   "title": "mini-audit attack-graph",
-  "description": "What the attacker currently holds and how those capabilities convert into one another (Search Governance v1, R2-6). Node types are limited to principal, capability and goal: a node type the runtime cannot verify would reintroduce the 'declared but unchecked' failure mode v1.1.1 removed. The principal and goal nodes are seeded from the canonical objective, so 'distance to target' has a defined origin.",
+  "description": "What the attacker currently holds and how those capabilities convert into one another (Search Governance v1, R2-6). Node types are limited to principal, capability and goal: a node type the runtime cannot verify would reintroduce the 'declared but unchecked' failure mode v1.1.1 removed. The principal and goal nodes are seeded from the canonical objective, so 'distance to target' has a defined origin. Pairs with search-ledger.json through a shared generation counter.",
   "type": "object",
-  "required": ["schema_version", "nodes", "edges"],
+  "required": ["schema_version", "generation", "nodes", "edges"],
   "additionalProperties": true,
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Shared with search-ledger.json and bumped by every `research apply`; see that schema for the contract."
+    },
     "audit_id": {"type": "string"},
     "nodes": {"type": "array", "items": {"$ref": "#/$defs/Node"}},
     "edges": {"type": "array", "items": {"$ref": "#/$defs/Edge"}},

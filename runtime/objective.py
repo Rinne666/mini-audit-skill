@@ -269,6 +269,10 @@ def init_and_bootstrap(
         seeded = graph_mod.seed_from_objective(graph, doc)
         graph_mod.require_consistent(graph)
         graph_mod.validate_graph_raise(graph)
+        # Whichever artifact was created adopts the other's generation counter,
+        # so a half-created audit is not incoherent by construction.
+        research.align_generation(ledger, graph, ledger_created=create_ledger,
+                                 graph_created=create_graph)
 
         write_json_atomic(objective_path(audit_root), doc)
         if create_ledger:

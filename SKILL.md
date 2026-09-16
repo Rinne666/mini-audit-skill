@@ -19,30 +19,77 @@ allowed-tools:
 
 A port of the Piolium security-audit pipeline (originally a Pi coding-agent extension) to MiniMax Code's skill + sub-agent harness. The Piolium phase catalog is preserved verbatim — phase IDs are a stable on-disk contract and must not be renamed.
 
-## Runtime Hardening v1 — deterministic layer
+## Architecture — deterministic layer (Runtime Hardening v1) + the Skill/Harness boundary
 
-This skill ships a three-layer architecture: **Reasoning** (LLM agents), **Policy** (permission-delta + verification methodology), and **Deterministic** (Python runtime at `runtime/`). The deterministic layer owns state, schema, gates, fingerprinting, coverage, scheduling, and export. LLM "I'm done" never advances phase state on its own — the runtime validates the expected artifacts, parses them, schema-validates them, and only then permits a state transition.
+This skill ships a three-layer architecture: **Reasoning** (LLM agents), **Policy** (permission-delta judging, verification methodology, and — since Search Governance v1 — the "what to investigate next" rules, all in `references/`), and **Deterministic** (Python runtime at `runtime/`). The deterministic layer owns state, schema, gates, fingerprinting, coverage, and export. LLM "I'm done" never advances phase state on its own — the runtime validates the expected artifacts, parses them, schema-validates them, and only then permits a state transition.
 
 The skill loads the runtime as a Python package at `<skill>/runtime/` and exposes it via `scripts/mini-audit-runtime`.
 
-```
-LLM 负责:
+```text
+The agent (main agent + sub-agents) is responsible for:
   reasoning, code understanding, hypothesis generation,
-  tracing, adversarial review, remediation reasoning
+  tracing, adversarial review, remediation reasoning,
+  deciding what to investigate next (references/methodology/search-governance.md)
 
-Runtime 负责:
-  state, scheduling, retries, timeouts, schema, gates,
-  artifact validation, fingerprinting, deduplication,
-  coverage accounting, tool execution, export
+The deterministic runtime is responsible for:
+  state, schema, gates, artifact validation, fingerprinting,
+  deduplication, coverage accounting, export,
+  the research-delta transaction, graph traversal,
+  the closure check and the saturation floor
+
+The harness — not this skill — is responsible for:
+  spawning and scheduling agents, concurrency, retries,
+  timeouts, worker lifecycle, recovery, budget
 ```
+
+### Skill / Harness / Plugin — who owns what (frozen)
+
+| Side | Owns | Where it lives |
+|------|------|----------------|
+| **Skill** | methodology, state protocol, decision rules, deterministic validators | `SKILL.md`, `references/**`, `schemas/**`, `templates/**`, `runtime/**` |
+| **Harness** | agent scheduling, concurrency, execution, retries, recovery, tool invocation, budget | the agent runtime; *not* this repo |
+| **Plugin** | how the skill is packaged, loaded and shipped | `SKILL.md` front matter, `scripts/mini-audit-runtime` launcher resolution, `references/MANIFEST.json`, `_meta.json` |
+
+Three rules follow from that split, and they are the reason the split is written
+down at all:
+
+1. **A rule that must not vary between runs goes in code; a rule that is still
+   being learned goes in `references/`.** Ranking the next round is judgement, so
+   it is `references/methodology/search-governance.md`, not a module.
+2. **Nothing in the skill may assume it can control the harness.** The skill
+   declares what must be true (a single canonical writer, a hard timeout on the
+   sandbox) and enforces what it can; it does not manage agents.
+3. **Deterministic state is only ever written by the runtime, under one lock.**
+   Workers read canonical state and write proposals into their own scratch
+   directory. See `references/methodology/research-state.md`.
+
+### Runtime Diet — per-module classification (Skill-First Refactor v1)
+
+| Module | Class | Why |
+|--------|-------|-----|
+| `atomic_io.py`, `schema.py` | **keep** | pure primitives; nothing to shrink |
+| `objective.py`, `research_state.py`, `attack_graph.py` | **keep** | validate / normalize / merge / dedupe / reference resolution / graph query — the pure deterministic duties |
+| `state.py`, `gates.py`, `findings.py`, `coverage.py`, `fingerprint.py`, `source_identity.py`, `sarif.py`, `diff_scope.py`, `export.py` | **keep** | deterministic artifact work, each answering one question with no policy |
+| `sandbox.py`, `sandbox_backend.py` | **keep** | isolation enforcement plus the differential canary that proves it. `run_command_with_timeout` is what makes the `hard_timeout` control real rather than declared |
+| `search_closure.py`, `search_saturation.py` | **keep** | the two L7 validators: does a reported chain close, and has the audit met its floor |
+| `search_lock.py` (`SearchGovernanceLock`) | **keep for now** | see the exit criterion below |
+| `scheduler.py` — `Lease`, `ConcurrencyLease`, `dispatch` | **frozen → harness** | concurrency quota and worker lifecycle are harness responsibilities. No new features; delete when the harness owns agent scheduling. The module stays because `run_command_with_timeout` is still load-bearing for the sandbox |
+| `search_governor.py` | **withdrawn** | ranking is a policy now: `references/methodology/search-governance.md`. A rule only the runtime can apply is a rule that cannot be corrected by editing a paragraph |
+
+**Exit criteria, so these are decisions and not drift.** Delete the lock when the
+harness can *guarantee* a single writer (not merely be expected to honour it);
+until then keep it, because a violated convention corrupts state silently. Delete
+`scheduler`'s lease/dispatch half when the harness owns agent scheduling. Sink a
+`references/` rule back into code only after the model is observed getting it
+wrong repeatedly — prove the policy first, then move the part that keeps failing.
 
 ### Layers
 
 | Layer | Lives in | Authoritative for |
 |-------|----------|-------------------|
 | Reasoning | `references/<role>.md` (Piolium inlined), `sub-agent prompts` | hypothesis, debate, trace |
-| Policy | `references/methodology/permission-delta-judging.md` | boundary crossing, severity, verdict |
-| Deterministic | `runtime/` (Python 3.9+, stdlib) | state, schema, gates, fingerprint, coverage, scheduler, export, scan→candidate normalization, diff scope |
+| Policy | `references/methodology/permission-delta-judging.md`, `references/methodology/search-governance.md`, `references/methodology/research-state.md` | boundary crossing, severity, verdict, next-round ranking |
+| Deterministic | `runtime/` (Python 3.9+, stdlib) | state, schema, gates, fingerprint, coverage, export, scan→candidate normalization, diff scope, research-delta transaction, graph traversal, closure + saturation checks |
 
 ### Canonical artifacts (owned by the runtime)
 
@@ -55,6 +102,7 @@ Runtime 负责:
 | `mini-audit/audit-objective.json` | runtime | what the audit is trying to prove — control plane (Search Governance v1, R2-3) |
 | `mini-audit/search-ledger.json` | runtime | what the search knows / suspects / is blocked on / intends (R2-1) |
 | `mini-audit/attack-graph.json` | runtime | capability nodes and how they convert into one another (R2-6) |
+| `mini-audit/search-saturation.json` | runtime (`search saturation`) | derived: the completion gate verdict and the remaining research debt |
 | `mini-audit/scanner/capabilities.json` | `scripts/detect-tools.sh` | what scanners/sandbox are available (Spec §27) |
 | `mini-audit/sandbox/probe.json` | `scripts/sandbox-check.sh` | sandbox pre-flight (Spec §25) |
 | `mini-audit/agents/<id>/task.json` | runtime | per-lease metadata (Spec §23) |
@@ -82,6 +130,11 @@ mini-audit-runtime objective replace --from <file> --force --reason "..." [--age
 mini-audit-runtime objective show
 mini-audit-runtime research apply <delta.json> [--agent ID]
 mini-audit-runtime research status
+mini-audit-runtime graph show
+mini-audit-runtime graph path --from <id|key> --to <id|key>
+mini-audit-runtime graph goals
+mini-audit-runtime graph frontier
+mini-audit-runtime search saturation [--workdir DIR]
 ```
 
 ### Search Governance (v1, R2-1 … R2-7)
@@ -105,7 +158,128 @@ The rules that matter operationally:
 * **One lock covers the whole research transaction.** `SearchGovernanceLock` (`.search-governance.lock`, `LOCK_EX` for writers, `LOCK_SH` for multi-artifact readers, 5s timeout) is a *write lock*, distinct from the scheduler's `Lease`, which is a concurrency quota. A busy lock exits **3** with a machine-readable holder.
 * **Only `principal`, `capability` and `goal` are node types.** A node type the runtime cannot verify would repeat the "declared but unchecked" failure v1.1.1 removed.
 
+#### Six things that are easy to confuse, and are not the same thing
+
+| Layer | Question it answers | Artifact / module |
+|---|---|---|
+| Coverage Ledger | *Where have we looked?* | `coverage-ledger.json` |
+| Search Ledger | *What do we know, suspect, and where are we stuck?* | `search-ledger.json` |
+| Attack Graph | *How do the capabilities we hold convert into one another?* | `attack-graph.json` |
+| Search Governance | *What is most worth investigating next?* | `references/methodology/search-governance.md` (policy, applied by the agent each round) |
+| Review Chamber | *Is this candidate locally real?* | chamber workspace + L6 gate |
+| Permission Delta | *Is there a real, unpermitted boundary crossing?* | `finding.verdict` + `disposition_reason` |
+
+A **Capability is not a Finding.** A capability records what the attacker can now do; only the permission-delta judgement turns a candidate into a finding, and a finding is the only thing that gets reported. The single bridge between the two planes is `boundary.capability_refs`, which the L7 closure check resolves.
+
+#### Traversal rules (what the graph queries enforce)
+
+* Only `verified` edges carry a claim. `proposed` is a hypothesis, `blocked` is a known obstacle, `refuted` is a dead end. None of them can make a capability "reachable".
+* **The destination node must also be `verified`.** An inbound verified edge does not promote a hypothesis: otherwise a `refuted` capability would still be reported as held, and the node status enum would be decorative.
+* **`requires` is walked backwards.** It points from a capability to its prerequisite, so holding the prerequisite is what unlocks the dependent. Read forwards it would mean "holding C-17 grants you its prerequisite", and the `prerequisite` role — and therefore blocked-path reopening — would mean nothing.
+* `verified_reachable` / `verified_path` use the strict reading. `goal_distance` also offers a *potential* reading (`POTENTIAL_STATUSES`) for ranking, because under the strict reading every node is "unreachable to goal" until the goal is finally taken.
+
+#### Next-round ranking is a policy, not a module
+
+Choosing what to investigate next is judgement, so it lives in
+**`references/methodology/search-governance.md`** and the main agent applies it every round.
+There is deliberately no `search_governor.py`: a ranking rule expressed as Python
+is a rule only the runtime can apply, and it freezes a decision that is still
+being learned. The summary below is orientation; the policy document is
+authoritative and carries the reasoning behind each rule.
+
+| Tier | Rules |
+|---|---|
+| P0 | a high-priority blocked path was reopened, or is one prerequisite away; a frontier edge; an open question blocking a path near a goal; a confirmed finding whose chain does not close |
+| P1 | a high-chain-potential candidate missing a prerequisite; an unverified assumption several blocked paths depend on; a verified capability nothing consumes; a candidate whose prerequisite is satisfied and which grants something new |
+| P2 | unresolved coverage; variant search over blocked/deferred coverage; single-dependent assumptions; diversification when every P0/P1 intent points the same way |
+
+Two properties keep the ranking honest, both learned by breaking them. Intents
+are capped **per strategy**, not per tier — a single cap over the concatenated
+list lets whichever rule runs first crowd a later rule out of the window
+entirely, which is how an intent about a confirmed finding with an unclosed chain
+got pushed out by questions the ranking had itself raised. And questions carrying
+the `oq:governor:` prefix are not re-reported as newly urgent: they are the
+previous round's output, and outstanding P0 debt is saturation's job to report,
+not the ranking's.
+
+The proposal is not canonical until it goes through the runtime. The orchestrator
+writes the intents into `agents/<id>/scratch/research-delta.json` (template:
+`templates/research-delta.json`) and applies them with `research apply`; the
+mapping and the traps are in the policy document § 6. This handoff used to be done
+by code (`search next --output`); it is the agent's job now, on the principle that
+a transformation is sunk into code only after the model is seen getting it wrong
+— not before.
+
+#### Saturation — the completion floor
+
+Exactly two hard conditions, both mechanically checkable:
+
+1. coverage — planning complete, units planned, none still `planned` or `in_progress`;
+2. no P0 open question — terminal states are `resolved` / `refuted` / `deferred`, and each must carry evidence: a resolution needs a reason plus a reference that resolves to a real file; a deferral needs a reason, a reopen condition, and either an attempted investigation or a blocker that is still standing (a blocked path whose assumption is `supported` — a *reopened* path is actionable, not a reason to wait).
+
+Everything else — open high-chain candidates, unverified assumptions, unreachable goals — is reported in `search-saturation.json` and does not block. A passing gate is called `search_saturated_under_current_budget`, never "exhausted": it proves a floor, not a ceiling.
+
+#### L7 closure — the bridge to the verdict plane
+
+For a Search Governance-enabled audit (objective **and** graph present — detected, not asserted by a flag), every `confirmed` finding must declare `boundary.capability_refs`, and each ref must resolve to a capability node that is reachable from the objective's principal over verified edges, with every edge's `via_candidate` resolving to a real candidate and every `evidence_refs` / `verification_refs` resolving to a real file. An audit without those artifacts is untouched. There is no string comparison against `after_capability` — that would break on the first rewording and make the check advisory in practice.
+
+#### How the audit phases feed it
+
+* **L1** — the agent writes `agents/<id>/scratch/objective-proposal.json` plus a research delta carrying the initial assumptions, facts and invariants; the orchestrator runs `objective init --from-proposal` and `research apply`. The L1 gate requires both canonical artifacts, so an audit cannot advance without a declared target.
+* **L5** — besides `probe-summary.md`, each probe agent writes `agents/<id>/scratch/research-delta.json` (facts, assumptions, questions, blocked paths, capabilities, edges, candidate research updates). The **orchestrator** decides what to `research apply`; the L5 gate does not scan scratch directories, because a gate that consumed agent scratch directly would be promoting agent output without review — the failure §7 exists to prevent.
+* **L6** — an accepted candidate must carry `local_validity`, `role` and `chain_potential`; one claiming `chain_seed` or `prerequisite` must additionally name at least one of `requires_capabilities`, `grants_capabilities`, `blocked_by`, or the role is a label with no structural meaning.
+* **P12 (variant hunting)** — two searches, not one: the root-cause variant *and* "which mechanism consumes this capability?".
+* **X1–X3 (longshot)** — diversity. If every P0/P1 intent shares one strategy, that says something about the search, not the target; longshot covers the independent directions (state machine, parser, cache, serialization, concurrency, configuration boundary).
+* **I1–I3 (reinvest)** — mainly blocked-path reopening: which old blockers have been invalidated, and which new capability satisfies an old candidate's prerequisite.
+* **L7** — `reported_capability_paths_closed` and `search_saturation_hard_gate` on top of the existing checks; `search saturation` writes the debt report.
+
+One asymmetry is deliberate and must be preserved: a dangling candidate reference at **apply** time is a warning (parallel research may build the graph before the candidate exists), while at **L7 closure** it is a hard failure.
+
 The launcher resolves the runtime package via three strategies: `MINI_AUDIT_RUNTIME_HOME` env → `$MAVIS_SKILLS_DIR/mini-audit` → relative to the script.
+
+## The audit round loop (the spine of this skill)
+
+Every audit runs this loop. It is the operational form of the Skill/Harness split
+above: the agent reasons, the harness executes, the runtime validates and writes.
+
+```text
+1.  Read the Objective.
+2.  Read the canonical Research State.
+3.  Identify the highest-value unanswered research question.
+4.  Spawn independent workers for that question.
+5.  Workers return research deltas, never canonical edits.
+6.  The orchestrator validates and merges deltas.
+7.  Re-evaluate:
+      - assumptions
+      - blocked paths
+      - new capabilities
+      - capability consumers
+      - goal distance
+8.  Promote only mature paths to verification.
+9.  Permission Delta decides reportability.
+10. Repeat until budget-aware saturation.
+```
+
+| Step | Owner | Where the output goes | The rule that makes it work |
+|---|---|---|---|
+| 1–2 | main agent | — | read the objective every round: a scope change makes "three edges from the goal" mean something else |
+| 3 | main agent | `agents/<id>/scratch/research-delta.json` | the ranking rules are `references/methodology/search-governance.md` § 3 |
+| 4 | harness (spawning), agent (briefing) | `agents/<worker-id>/` | one question, several independent angles — not one worker, several questions |
+| 5 | worker agents | `agents/<worker-id>/scratch/research-delta.json` | worker read-only on canonical state; `references/methodology/research-state.md` § 2 |
+| 6 | orchestrator + runtime | canonical artifacts, via `research apply` | the orchestrator is the single canonical writer; the delta applies whole or not at all |
+| 7 | main agent | the next round's intents | a delta that disproves an assumption changes which blocked paths are actionable; skipping this means answering last round's question |
+| 8 | main agent → L6/L6b | chamber + verification artifacts | a verified capability with no consumer is a lead, not a finding. Maturity is having a *chain*, not having one node |
+| 9 | Policy layer | `finding.verdict` + `disposition_reason` | `references/methodology/permission-delta-judging.md` — a capability is not a finding |
+| 10 | main agent + runtime | `mini-audit/search-saturation.json` | two hard conditions (coverage closed; no unanswered P0 question) plus a debt report. A pass is `search_saturated_under_current_budget`, never "exhausted" |
+
+Step 7 is the one that gets skipped under time pressure and the one that makes the
+rest worth having. A new fact can invalidate an assumption and reopen a path
+nobody is working on; a new capability changes what is worth consuming; a newly
+verified edge moves the frontier. Re-evaluating is what turns a pile of deltas
+into a search.
+
+Nothing in this loop requires a new runtime module. The loop *is* the product;
+the deterministic layer exists to make steps 5, 6 and 10 non-negotiable.
 
 ### Phase gates are now declarative (Spec §9)
 
@@ -265,17 +439,17 @@ Eval corpus under `evals/{positive,negative,ambiguous,}` exercises the permissio
 <!-- BEGIN auto-counts — generated, do not edit by hand
 | Metric | Value |
 |--------|-------|
-| reference files (4 sub-directories) | 100 |
-| manifest items (incl. inline agents) | 130 |
+| reference files (4 sub-directories) | 102 |
+| manifest items (incl. inline agents) | 132 |
 | inline agent templates | 28 |
 | per-class hunting methodologies | 58 |
 | per-class vulnerability references | 29 |
-| operator methodologies | 8 |
+| operator methodologies | 10 |
 | runtime wordlists | 5 |
 | eval fixtures | 30 |
 | first-class roles | 7 |
 | phase gates declared | 38 |
-| runtime version | 1.2.0 |
+| runtime version | 1.4.0 |
 | commands: full / partial / stub | 8 / 5 / 4 |
 <!-- END auto-counts -->
 
@@ -348,9 +522,9 @@ The 35 Piolium specialist agents are surfaced as 7 first-class mini-audit roles 
 
 **Model selection**: `mavis agent create` does not currently accept a `model` field, so the per-agent model is whatever mavis dispatches with (typically the main orchestrator's model). **The orchestrator (the main model running the skill) is responsible for picking the right `subagent_type` at dispatch time** — we do not pin model per role. If a phase needs a stronger model for a hard sub-task, the orchestrator can dispatch `general` sub-agents with explicit model instructions in the task prompt instead of relying on the first-class agent.
 
-### Per-vulnerability-class knowledge base (100 reference files in 4 sub-directories)
+### Per-vulnerability-class knowledge base (102 reference files in 4 sub-directories)
 
-`references/` contains 100 reference files in 4 sub-directories. The orchestrator reads them on-demand based on the hypothesis class.
+`references/` contains 102 reference files in 4 sub-directories. The orchestrator reads them on-demand based on the hypothesis class.
 
 | Sub-directory | Files | Source | Role in mini-audit |
 |--------------|-------|--------|---------------------|
@@ -364,7 +538,7 @@ The 35 Piolium specialist agents are surfaced as 7 first-class mini-audit roles 
 
 ### Context budget discipline (CRITICAL — read first)
 
-The 100 reference files total 1.8MB on disk. None of that enters context unless the orchestrator explicitly reads a file. Per sub-agent call, inline at most **1 hunting + 1 vuln-classes + 1 inline agent** file = 10-30KB ≈ 3-8K tokens. Opus 200K context is enough headroom for 17 phases.
+The 102 reference files total 1.7MB on disk. None of that enters context unless the orchestrator explicitly reads a file. Per sub-agent call, inline at most **1 hunting + 1 vuln-classes + 1 inline agent** file = 10-30KB ≈ 3-8K tokens. Opus 200K context is enough headroom for 17 phases.
 
 **NEVER** (will blow up the context window):
 

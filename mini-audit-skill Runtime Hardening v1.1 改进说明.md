@@ -688,3 +688,262 @@ Phase E  evals/long_horizon/ 重放评测器 E0 与三个优先指标
 其他     ledger 内 ref 的解析约定：目前是不透明字符串（相对 audit root），agent 写的
          evidence_refs 更像 repo 相对路径，统一留给 Phase D 的 closure 检查定义
 ```
+
+---
+
+# Search Governance v1 — Phase B / C / D / E0（runtime 1.3.0）
+
+Phase A 之后继续做完本轮计划：让系统从「能保存长期研究状态」升级为「能决定下一步搜什么，
+并能验证报告里的能力链是否真的闭合」。
+
+## P0 收口（先修协议问题）
+
+* **research-delta 顶层 fail-closed。** 顶层 `additionalProperties` 改为 `false`：此前
+  `capabilites_add` 这类拼写错误会通过校验、被 runtime 完全忽略，而 agent 看到的是
+  exit 0 加一个空的 `created` —— 和「已经应用过」无法区分。
+* **semantic key 真正全局唯一。** 新增 `find_key_anywhere`，覆盖 facts / assumptions /
+  open_questions / blocked_paths / intents + graph nodes + graph edges。持久状态中 key
+  已绑定另一 kind 时报 `RESEARCH_KEY_CONFLICT` 并整条拒绝。此前只保证「同一次 delta 内
+  不重复」，于是 `fact:shared` 之后可以再出现 `assumption:shared`，而已有引用是按 key 解析的，
+  语义立刻变得歧义。顺带：引用解析现在会说「解析到了一个 fact，而不是 capability」，
+  而不是笼统的 unknown reference。
+* **事务措辞改准确 + generation 落地。** 文档不再称「跨文件原子事务」，改为
+  「独占锁下、先全量校验后逐文件原子替换的事务」。同时给 ledger 与 graph 加共享的
+  `generation` 整数：每次 `research apply` 一起 +1，读者发现两者不一致即 fail closed
+  （`RESEARCH_GENERATION_MISMATCH`）。这是「先全量校验」无法覆盖的那种残留 ——
+  两个写之间崩掉 —— 第一次变得可检测。只写单个 artifact 的合法操作（objective replace
+  会写 ledger 系统 fact 但刻意不动 graph）保留计数不变。
+
+## Phase B — Attack Graph 可查询
+
+新增 `verified_path` / `verified_reachable` / `reachable_capabilities` / `paths_to_goals` /
+`goal_distance` / `blocked_frontier`，CLI 增加 `graph show|path|goals|frontier`。
+
+三个必须写下来的语义决定：
+
+1. **`requires` 反向遍历。** 它从能力指向它的前提，所以「持有前提」才是解锁依赖者的方向。
+   正向读会变成「持有 C-17 就能得到它的前提」，同时让 `prerequisite` 角色与 blocked path
+   的 reopen 机制失去意义。
+2. **目标节点自身也必须是 `verified`。** 一条 verified 边不能把一个假设提升为事实：
+   否则 `refuted` 的 capability 仍会因为「有边指向它」被算作已持有，而节点状态枚举沦为装饰。
+   `verified_reachable` 与 `verified_path` 用同一套规则，避免两者对「是否已证明」给出不同答案。
+3. **两个 goal 距离口径。** `goal_distance` 默认只走 verified 边（用于任何「已证明」的断言），
+   另有 `POTENTIAL_STATUSES`（含 proposed/blocked）供排序使用。原因很实际：严格口径下，
+   目标在最后被打下之前每个节点都是「不可达目标」，于是「这条问题阻塞了一条接近 Goal 的
+   路径」这条 P0 规则在整场审计里永远不会触发 —— 首次实现就是这样，被测试抓到。
+
+## Phase C — Search Governor
+
+新增 `runtime/search_governor.py` 与 CLI `search next`。只读，**刻意没有 `--apply`**：
+planner 与 writer 分离，而 `--output` 写出的文件本身就是一份可直接 `research apply` 的
+research delta，所以交接是机械的而不是人工翻译。P0/P1/P2 由规则决定，没有浮点评分。
+
+两个让排序站得住的性质：
+
+* **按 strategy 限流，而不是按 tier。** 对拼接后的列表统一截断会让先跑的规则把后面的规则
+  整个挤出窗口 —— 实际发生过：governor 自己提出的问题下一轮变成 P0 未答问题，把
+  「confirmed finding 的能力链没闭合」这条 P0 挤掉了。
+* **不重报自己提出的问题。** `oq:governor:*` 是它的输出，不是新信息；否则每轮都会把自己的
+  建议当成新的紧急事项。未清完的 P0 债务由 saturation 报告负责，不是排序的职责。
+
+`reported_capability_paths_closed` 的判定被抽到 `runtime/search_closure.py`，因为 L7 gate 与
+governor 的 P0 规则 4 需要同一个裁决 —— 两份实现会漂移，也就是 `schema.py` 存在的同一个理由。
+
+## Phase D — L7 接入
+
+* **`reported_capability_paths_closed`**：confirmed finding 必须显式引用 capability，
+  每个 CAP ref 必须存在于图中、type 为 capability、能从 objective 的 principal 经 verified
+  边到达，路径上每条边的 `via_candidate` 必须解析到真实 candidate、`evidence_refs` /
+  `verification_refs` 必须解析到真实文件。**不做 `after_capability` 文本匹配** —— 那会在
+  第一次改措辞时失效。
+* **SG-enabled 是检测出来的，不是声明的。** objective 与 graph 同时存在即启用；
+  旧审计两者皆无，两个检查直接 no-op，保持兼容。因此这两个 artifact 不能加进 `required`
+  （那会让旧审计因为一份它从未签过的契约而失败），但一旦存在就必须 schema valid 且
+  generation 一致 —— bundle 的装配失败会被并入检查结果。
+* **`search_saturation_hard_gate`**：只硬性强制两条（coverage 关闭；P0 问题无未答且终态带证据），
+  其余一律只写报告。deferred 必须给 reason + reopen_if + （attempt_refs 或 blocked_path_ref），
+  且引用的 blocked path 必须仍然有效（状态为 blocked；若其 blocker 关联 assumption，
+  该 assumption 必须是 supported —— reopened 的路径是可行动的，不是等待的理由）。
+  术语固定为 `search_saturated_under_current_budget`，并注明「这是下限，不是搜索已穷尽」。
+* **L6 强化**：accepted candidate 必须有三项 research 元数据；声明 `chain_seed` /
+  `prerequisite` 的还必须给出 `requires_capabilities` / `grants_capabilities` /
+  `blocked_by` 之一，否则角色只是标签。
+* **apply 时 warning / L7 fail closed** 的区别保留不变。
+
+## Phase E0 — 长程重放评测
+
+新增 `evals/long_horizon/`（三段链 fixture）与 `evals/long_horizon_run.py`（不扩现有分类器）。
+fixture 把一条攻击链拆在三个文件里：校验失配（没有危险 sink）、危险查询原语（REST 路径到不了）、
+特权状态跃迁（匿名 principal 不可达）—— 单独任何一个都不是 Finding。重放三次 research delta，
+测 runtime 是否 retain、记录 blocker、assumption 被推翻后 reopen、连通能力图、最终形成
+verified path。三个指标：Premature Rejection Rate / Blocked Path Reopen Rate /
+Chain Completion Recall，CI 会跑并且低于阈值即失败。
+
+**不声称发现率提升。** 三个指标只描述 runtime 对长期研究状态的处理，没有跑模型，
+也没有做 with/without governor 的对照。模拟裁决的口径明确写在脚本与 `evals/README.md` 里，
+而且每条子句都读 runtime 维护的状态（blocked path 记录、可达性），不读 scenario 文件 ——
+否则测的就是脚本自己。三个指标各配一个负对照测试，证明它们会真的失败。
+
+## 实现中抓到的缺陷
+
+* **`research apply` 就地改写调用方的 delta 对象**（把 key 解析成 id 写回），于是同一个
+  delta 对象只能应用一次 —— 第二次会因为「引用了尚不存在的 CAP-004」失败。改为在副本上工作，
+  并让引用解析幂等（同 delta 内新建对象的 canonical id 也可解析）。
+* **节点状态不影响可达性**（见上文 Phase B 第 2 点）。
+* **`goal_distance` 只用 verified 边**，导致「接近 Goal」这条 P0 规则永不触发。
+* **按 tier 截断**导致 closure 意图被 governor 自己的问题挤掉。
+* **`CapabilityUpdate` 没有 `verification_refs`**（那是 edge 字段）——长程 fixture 起初用错。
+* 长程 fixture 跨 delta 引用了尚未创建的 capability（这是真缺陷：应该是同一 delta 内引用，
+  或先以 proposed 创建再提升）。
+
+## 验证
+
+```text
+pytest tests/unit                              544 passed（Phase A 结束时 452 → +92）
+evals/long_horizon_run.py                      premature 0.0000 / reopen 1.0000 / chains 1.0000
+scripts/manifest.py --check                    up to date (130 items)
+scripts/check-manifest.py --strict             0 errors / 1 license warning
+scripts/doc_counts.py --check                  consistent
+evals/run.py --self-check                      30 fixtures, 0 errors
+```
+
+手工端到端复核（`/tmp/sgl7`、`/tmp/govcheck`、`/tmp/graphcheck`）：SG-enabled 的 L7 在
+finding 引用不可达 capability 时拒绝、引用不存在的 CAP 时拒绝、链闭合后通过、P0 问题未答时
+拒绝、resolved 无证据 / 证据指向不存在文件时拒绝、旧审计不受影响；`graph frontier` 在
+`requires` 边上的 `edge_from/edge_to` 与 `held/unlocks` 分开报，不会与图文件自相矛盾。
+
+---
+
+# Skill-First Refactor v1 — 架构收缩（runtime 1.4.0）
+
+上一轮结束时的状态是：Phase A–E0 全部落地、532 项测试通过，但**又长出一个 685 行的
+`runtime/search_governor.py`**。这一轮不新增功能，方向相反 —— 把项目重新钉回 Skill 层。
+
+一句话目标：
+
+> Skill 负责「研究方法 + 状态协议 + 决策规则 + 校验」；Agent 调度、并发、执行、恢复、
+> 工具调用交回 Harness；**只有模型反复做错的那部分才下沉成代码**。
+
+## 1. Runtime Diet：逐模块分类
+
+新增 SKILL.md § "Runtime Diet"，给每个模块一个类别与理由，而不是让边界随实现漂移：
+
+| 类别 | 模块 |
+|---|---|
+| 保留（纯确定性） | `atomic_io` `schema` `objective` `research_state` `attack_graph` `state` `gates` `findings` `coverage` `fingerprint` `source_identity` `sarif` `diff_scope` `export` |
+| 保留（执行保证） | `sandbox` `sandbox_backend` —— 硬超时是隔离的一部分，不是编排 |
+| 保留（L7 校验） | `search_closure` `search_saturation` |
+| 保留（暂不删） | `search_lock` |
+| 冻结 → 交回 Harness | `scheduler` 的 `Lease` / `ConcurrencyLease` / `dispatch` 半边 |
+| 撤回 | `search_governor.py` |
+
+`search_governor.py` 与配套的 14 条测试一并删除，CLI 的 `search next` 一并移除。**规则没有丢**：
+它已被转写成 `references/methodology/search-governance.md`，包括两条实测学到的性质（按 strategy
+限流而非按 tier；不重报 `oq:governor:*` 自产问题）与四条判定语义（`requires` 反向、节点自身也须
+`verified`、只走 verified 边、potential 与 strict 两种 goal 距离口径）。
+
+**退出条件是写下来的，不是"以后再说"**：Harness 能真正保证 single-writer（而非"约定应当如此"）
+时才删 `search_lock`；Harness 接管 agent 调度时才删 `scheduler` 的 lease/dispatch 半边。
+`scheduler` 之所以整体留着，是因为 `run_command_with_timeout` 被 sandbox 依赖 —— 先拆掉能工作的
+保护去换架构纯洁，是这一轮明确拒绝的事。
+
+## 2. Search Governor → Skill Policy
+
+新增 `references/methodology/search-governance.md`：输入（Objective / Research State / Attack Graph /
+Coverage / Candidates / 剩余预算）、输出（Next Intents 的字段契约）、P0/P1/P2 规则、排序纪律、
+每轮循环、以及 intent → research delta 的机械交接。
+
+新的默认流程是：主 Agent 读状态 → 按规则产出 intents → **自己写成** research delta（模板
+`templates/research-delta.json`）→ 交 `research apply`。这比 `search next --output` 多了一步，
+是**有意的代价**：`--output` 只存在于"ranking 是代码"的世界里，而这一轮赌的是 ranking 作为策略
+能被模型稳定执行。若实测反复出错，这一个转换是第一个下沉候选 —— 方向是「先证明策略可行，
+再把老是失败的那 10% 变成代码」，而不是反过来。
+
+## 3. 五个 canonical 对象固定
+
+新增 `references/methodology/research-state.md`：Objective（目标）/ Research State（知道什么、
+怀疑什么、卡在哪）/ Attack Graph（能力如何转换）/ Coverage（哪里审过）/ Findings（能报告什么）
+五个对象的概念边界与"capability 不是 finding"的单桥（`boundary.capability_refs`）。
+文件**名字保持不变**（`search-ledger.json` 不迁移），worker 的唯一写入通道
+（`agents/<id>/scratch/research-delta.json`）保持不变 —— 这是整个 Skill 最值得保留的确定性边界。
+
+同时写下 single-writer 契约（worker 只读 canonical；orchestrator 是唯一 canonical writer；
+runtime 在锁下写）、identity/mutable 字段表、事务的**准确**保证（独占锁下先全量校验再逐文件原子
+替换 —— 不是"跨文件原子事务"）、以及 apply 时 warning / L7 fail closed 这条必须保留的不对称。
+
+新增 `templates/objective-proposal.json` 与 `templates/research-delta.json`，两者都已实测可直接使用。
+
+## 4. 长程 fixture 改成真实三文件
+
+`evals/long_horizon/chain-001/` 由内联 JSON 字符串改为目录形态：
+
+```text
+chain-001/A.py          校验绕过：import 路径不做过滤就到达查询
+chain-001/B.py          危险原语：报表 SQL 由拼接构造，但所有入口都会先做整数化
+chain-001/C.py          特权跃迁：把报表行里的 role 抄到 session 上
+chain-001/scenario.json objective / candidates / delta 序列 / oracle / thresholds
+```
+
+三个文件各自都不是 finding：A 是缺失校验且没有 sink，B 不可驱动，C 的行来自数据库。
+重放三次 delta 仍只查 runtime 行为（保留 → 记录 blocker → assumption 被推翻后 reopen → 验证路径闭合）。
+
+新增两道 fixture 完整性检查，因为**旧的 fixture 无法证明自己引用的代码存在**：deltas 里的
+`file:line` 证据必须解析到重放根目录里的真实行；声明了 sources 却一条 `file:line` 都不引用则直接
+失败（否则检查会空转通过）。解析计数会随指标一起打印 —— 静默通过的检查等于没检查。
+
+## 5. 本轮抓到的缺陷
+
+* **delta 模板一开始不可用**：首版把 12 个操作全写进模板，其中 `candidate_updates` 要求候选已存在，
+  在全新审计上必然 `UNKNOWN_CANDIDATE` 整条失败。改为"模板只含创建形态、变更形态写进契约文档"，
+  并实测两种形态。
+* **文档写错的领域事实**：policy 文档曾称 `search saturation` 报告里有 `closure`（实际没有，
+  闭合是 L7 gate 的检查）、称 `graph show` 会列出节点（实际只给摘要）、把 coverage 路径写成
+  `mini-audit/mini-audit/...`。全部按实际输出改正 —— 宁可让文档承认"要读 `attack-graph.json`"。
+* **新增 reference 会伪造溯源**：`manifest.py` 的 `categorize()` 把 references/ 根级 `.md` 一律判为
+  `agent-inline`，`PROVENANCE.json` 的兜底规则又把它们记为 `source_repo: piolium`。两份原创 policy
+  若放在根级，会同时污染"28 个 inline agent"计数与许可证归属。因此改放
+  `references/methodology/`（Policy 层目录，`permission-delta-judging.md` 的邻居），并为两者加
+  `source: local` 的 overrides —— 溯源如实。
+* **测试字面量过期**：候选改名后 `test_a_retained_lead_is_retained_by_research_state_not_by_the_script`
+  里的硬编码 id 集合失配。改为从 fixture 读候选列表，杜绝同类过期。
+* **fixture 完整性检查可能空转**（见上文，已加零引用守卫 + 计数展示）。
+
+## 6. 验证
+
+```text
+pytest tests/unit                              532 passed
+evals/long_horizon_run.py                      CHAIN-001: 0.0000 / 1.0000 / 1.0000；3 sources, 10 evidence refs resolved
+scripts/manifest.py --check                    up to date (132 items)
+scripts/check-manifest.py --strict             0 errors / 1 license warning
+scripts/doc_counts.py --check                  consistent
+evals/run.py --self-check                      30 fixtures, 0 errors
+compileall                                     OK
+mini-audit-runtime --version                   1.4.0
+```
+
+## 7. 按完成标准逐条对照
+
+| 标准 | 状态 |
+|---|---|
+| Worker 不直接写 canonical state | ✅ 既有铁律，本轮写成正式契约（research-state.md §2 + SKILL.md 边界三条） |
+| Harness 能根据 Skill 自主生成下一轮 Intent | ⚠️ **策略已就位，但未用真实模型验证** —— 本轮只提供规则、模板与确定性查询命令，没有跑 live agent |
+| blocked primitive 不会因暂时不可利用而丢失 | ✅ 规则 + 测试 + `premature_rejection_rate = 0.0000` |
+| 新事实可以重新激活旧路径 | ✅ assumption `disproved` 触发 reopen，`blocked_path_reopen_rate = 1.0000` |
+| capability 可以被后续 Agent 搜索 consumer | ✅ P1 `capability-consumer-search` 规则；fixture 末步留下 P1 consumer 问题 |
+| 一条三阶段攻击链能跨多个 Agent 回合完成 | ⚠️ 重放的是三个不同 agent id 提交的 delta，**不是三个真实 agent 回合** |
+| 最终 Finding 可回溯到 research state / capability path | ✅ `boundary.capability_refs` + L7 `reported_capability_paths_closed` |
+| 没有新增 orchestration framework | ✅ 新增的是 2 份政策文档、2 个模板、1 个 fixture 目录；删除 1 个模块 |
+
+两条 ⚠️ 是本轮**没有**解决的部分，且不能靠再写代码解决：它们需要一次真实的 Harness 运行
+（真 agent、真预算、真回合）才能回答。这也是下一阶段的起点，而不是收尾。
+
+## 8. 尚未做（下一阶段的候选）
+
+```text
+用真实 Harness 跑一次 chain-001（live agent，多回合），验证策略可执行性
+     —— 失败点即为 P2 下沉候选
+Harness 若可保证 single-writer，则删除 search_lock
+Harness 若接管 agent 调度，则删除 scheduler 的 lease/dispatch 半边
+```
+
+原则保留：**先证明「Skill + Harness」本身够聪明，再把模型反复做错的那 10% 下沉成代码。**

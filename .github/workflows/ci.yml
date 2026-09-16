@@ -57,6 +57,13 @@ jobs:
       - name: Eval corpus self-check
         run: python evals/run.py --self-check
 
+      - name: Long-horizon replay (Search Governance)
+        # Replays the scripted research deltas and fails if any of the three
+        # metrics drops below the scenario's threshold. It measures the
+        # runtime's handling of long-lived research state — not discovery
+        # performance; see the scope note in the report.
+        run: python evals/long_horizon_run.py
+
       - name: Shell scripts parse
         run: |
           status=0

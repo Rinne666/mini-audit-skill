@@ -26,6 +26,7 @@ from runtime import research_state as rs
 from runtime import schema as schema_mod
 from runtime.objective import ObjectiveError
 from runtime.research_state import (
+    DeltaSchemaError,
     DuplicateKeyInDelta,
     IdentityAlreadyBound,
     ResearchKeyConflict,
@@ -594,10 +595,15 @@ def _validate(instance: dict, schema_name: str) -> list:
 
 
 def _ledger_doc(**overrides) -> dict:
-    doc = {"schema_version": 1, "facts": [], "assumptions": [], "open_questions": [],
-           "blocked_paths": [], "intents": []}
+    doc = {"schema_version": 1, "generation": 1, "facts": [], "assumptions": [],
+           "open_questions": [], "blocked_paths": [], "intents": []}
     doc.update(overrides)
     return doc
+
+
+def _graph_doc(*, nodes: list | None = None, edges: list | None = None) -> dict:
+    return {"schema_version": 1, "generation": 1,
+            "nodes": nodes or [], "edges": edges or []}
 
 
 def _question(**overrides) -> dict:
@@ -632,7 +638,7 @@ def test_attack_graph_refuses_a_state_node_type() -> None:
     """`state` was dropped from v1: a node type the runtime cannot check would
     reintroduce the 'declared but unchecked' failure v1.1.1 removed."""
     node = {"id": "CAP-001", "key": "k", "type": "state", "name": "x", "status": "verified"}
-    assert _validate({"schema_version": 1, "nodes": [node], "edges": []}, "attack-graph")
+    assert _validate(_graph_doc(nodes=[node]), "attack-graph")
 
 
 @pytest.mark.parametrize("node_type", ["principal", "capability", "goal"])
@@ -640,7 +646,7 @@ def test_attack_graph_allows_only_the_three_v1_node_types(node_type: str) -> Non
     prefix = {"principal": "PRIN", "capability": "CAP", "goal": "GOAL"}[node_type]
     node = {"id": f"{prefix}-001", "key": "k", "type": node_type, "name": "n",
             "status": "proposed"}
-    assert _validate({"schema_version": 1, "nodes": [node], "edges": []}, "attack-graph") == []
+    assert _validate(_graph_doc(nodes=[node]), "attack-graph") == []
 
 
 def test_research_delta_rejects_unknown_fields_and_missing_identity() -> None:
@@ -833,3 +839,185 @@ def test_cli_research_apply_reports_a_conflict_with_its_code(tmp_path: Path) -> 
     assert proc.returncode == 2
     payload = json.loads(proc.stdout)
     assert payload["code"] == "RESEARCH_KEY_CONFLICT"
+
+
+# ---------------------------------------------------------------------------
+# P0-1 / P0-2 — the delta contract must be closed, and keys globally unique
+# ---------------------------------------------------------------------------
+
+
+def test_delta_rejects_an_unknown_top_level_field(tmp_path: Path) -> None:
+    """A misspelled operation must not look like success.
+
+    With ``additionalProperties: true`` at the top level, ``capabilites_add``
+    validated cleanly and the runtime ignored it — the agent sees exit 0 and an
+    empty `created` map, which is indistinguishable from "already applied".
+    """
+    root = _init(tmp_path)
+    typo = {"schema_version": 1, "capabilites_add": [{"key": "cap:typo", "name": "typo"}]}
+
+    assert _validate(typo, "research-delta"), "schema accepted a misspelled operation"
+
+    before = _digest(rs.ledger_path(root), ag.graph_path(root))
+    with pytest.raises(DeltaSchemaError):
+        rs.apply_delta(root, typo)
+    assert _digest(rs.ledger_path(root), ag.graph_path(root)) == before
+    assert not any(n.get("key") == "cap:typo" for n in ag.load_graph(root)["nodes"])
+
+
+def test_delta_rejects_an_unknown_top_level_field_through_the_cli(tmp_path: Path) -> None:
+    root = _init(tmp_path)
+    delta = tmp_path / "typo.json"
+    delta.write_text(json.dumps({"schema_version": 1,
+                                 "capabilites_add": [{"key": "cap:typo", "name": "typo"}]}),
+                     encoding="utf-8")
+    proc = _run_cli("research", "apply", str(delta), "--audit-root", str(root), cwd=tmp_path)
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert json.loads(proc.stdout)["code"] == "DELTA_SCHEMA"
+
+
+def test_persisted_cross_kind_key_reuse_is_refused(tmp_path: Path) -> None:
+    """A key is unique across the whole namespace, not per kind.
+
+    References resolve by key first, so a `fact:shared` joined later by an
+    `assumption:shared` would silently make every reference to `shared`
+    ambiguous.
+    """
+    root = _init(tmp_path)
+    rs.apply_delta(root, {"schema_version": 1,
+                          "facts_add": [{"key": "shared:key", "claim": "a fact"}]})
+    before = _digest(rs.ledger_path(root), ag.graph_path(root))
+
+    with pytest.raises(ResearchKeyConflict) as excinfo:
+        rs.apply_delta(root, {"schema_version": 1,
+                              "assumptions_add": [{"key": "shared:key", "claim": "an assumption"}]})
+    assert excinfo.value.code == "RESEARCH_KEY_CONFLICT"
+
+    assert rs.find_by_key(rs.load_ledger(root), "assumption", "shared:key") is None
+    assert _digest(rs.ledger_path(root), ag.graph_path(root)) == before
+
+
+@pytest.mark.parametrize("conflicting", [
+    {"questions_add": [{"key": "cap:sql", "question": "reuse a graph key?"}]},
+    {"facts_add": [{"key": "cap:sql", "claim": "reuse a graph key"}]},
+])
+def test_a_key_bound_to_a_graph_node_cannot_be_reused(tmp_path: Path,
+                                                      conflicting: dict) -> None:
+    root = _init(tmp_path)
+    rs.apply_delta(root, {"schema_version": 1, "capabilities_add": [
+        {"key": "cap:sql", "name": "control_sql_expression"}]})
+    before = _digest(rs.ledger_path(root), ag.graph_path(root))
+    with pytest.raises(ResearchKeyConflict):
+        rs.apply_delta(root, {"schema_version": 1, **conflicting})
+    assert _digest(rs.ledger_path(root), ag.graph_path(root)) == before
+
+
+def test_a_key_cannot_shadow_the_objective_principal_node(tmp_path: Path) -> None:
+    """The seeded principal node holds a key too; nothing may take it over."""
+    root = _init(tmp_path)
+    before = _digest(rs.ledger_path(root), ag.graph_path(root))
+    with pytest.raises(ResearchKeyConflict, match="principal"):
+        rs.apply_delta(root, {"schema_version": 1, "capabilities_add": [
+            {"key": "objective:principal", "name": "shadow_the_principal"}]})
+    assert _digest(rs.ledger_path(root), ag.graph_path(root)) == before
+
+
+def test_wrong_kind_reference_names_the_kind_it_found(tmp_path: Path) -> None:
+    """'unknown reference' would send the author looking in the wrong place."""
+    root = _init(tmp_path)
+    rs.apply_delta(root, {"schema_version": 1,
+                          "facts_add": [{"key": "shared:key", "claim": "a fact"}]})
+    with pytest.raises(UnknownReference, match="resolves to a fact"):
+        rs.apply_delta(root, {"schema_version": 1, "edges_add": [
+            {"key": "edge:wrongkind", "from": "shared:key", "to": "cap:sql",
+             "relation": "enables"}]})
+
+
+def test_same_kind_key_reuse_still_merges(tmp_path: Path) -> None:
+    """Guard the other way: global uniqueness must not break ordinary merging."""
+    root = _init(tmp_path)
+    rs.apply_delta(root, {"schema_version": 1,
+                          "facts_add": [{"key": "shared:key", "claim": "a fact"}]})
+    report = rs.apply_delta(root, {"schema_version": 1,
+                                   "facts_add": [{"key": "shared:key", "claim": "a fact",
+                                                  "confidence": "high"}]})
+    assert report["created"] == {}
+    assert report["merged"]["fact"] == ["FCT-001"]
+    assert rs.load_ledger(root)["facts"][0]["confidence"] == "high"
+
+
+# ---------------------------------------------------------------------------
+# P0-3 — one generation across the two research artifacts
+# ---------------------------------------------------------------------------
+
+
+def _generations(root: Path) -> tuple[int, int]:
+    return (rs.load_ledger(root)["generation"], ag.load_graph(root)["generation"])
+
+
+def test_ledger_and_graph_share_a_generation(tmp_path: Path) -> None:
+    root = _init(tmp_path)
+    assert _generations(root) == (1, 1)
+
+    report = rs.apply_delta(root, {"schema_version": 1,
+                                   "facts_add": [{"key": "fact:one", "claim": "a fact"}]})
+    assert report["generation"] == 2
+    assert _generations(root) == (2, 2)
+
+    rs.apply_delta(root, {"schema_version": 1,
+                          "facts_add": [{"key": "fact:two", "claim": "another fact"}]})
+    assert _generations(root) == (3, 3)
+
+
+def test_an_objective_revision_preserves_the_generation(tmp_path: Path) -> None:
+    """A revision writes a ledger fact but deliberately leaves the graph alone,
+    so it must not advance the counter — advancing it would manufacture a
+    mismatch out of a legitimate single-artifact write."""
+    root = _init(tmp_path)
+    rs.apply_delta(root, {"schema_version": 1,
+                          "facts_add": [{"key": "fact:one", "claim": "a fact"}]})
+    before = _generations(root)
+    objective_mod.replace_and_record(root, {**PROPOSAL, "principal": "someone_else"},
+                                     force=True, reason="principal corrected")
+    assert _generations(root) == before
+
+
+def test_generation_mismatch_fails_closed(tmp_path: Path) -> None:
+    """A crash between the two writes is the one thing staged validation
+    cannot prevent, so it must be detectable on read."""
+    root = _init(tmp_path)
+    graph = ag.load_graph(root)
+    graph["generation"] = 7
+    ag.save_graph(root, graph)
+
+    with pytest.raises(rs.ResearchGenerationMismatch) as excinfo:
+        rs.load_research_state(root)
+    assert excinfo.value.code == "RESEARCH_GENERATION_MISMATCH"
+    assert "attack-graph.json is at generation 7" in str(excinfo.value)
+
+    # And no further mutation is allowed on top of an incoherent pair.
+    before = _digest(rs.ledger_path(root), ag.graph_path(root))
+    with pytest.raises(rs.ResearchGenerationMismatch):
+        rs.apply_delta(root, {"schema_version": 1,
+                              "facts_add": [{"key": "fact:new", "claim": "should not land"}]})
+    assert _digest(rs.ledger_path(root), ag.graph_path(root)) == before
+
+
+def test_a_missing_graph_is_bootstrapped_at_the_ledger_generation(tmp_path: Path) -> None:
+    """A half-created audit self-heals rather than becoming permanently
+    incoherent: the new graph adopts the ledger's counter and re-seeds the
+    principal node that edges are asserted against."""
+    root = _init(tmp_path)
+    rs.apply_delta(root, {"schema_version": 1,
+                          "facts_add": [{"key": "fact:one", "claim": "a fact"}]})
+    ag.graph_path(root).unlink()
+
+    report = rs.apply_delta(root, {"schema_version": 1, "edges_add": [
+        {"key": "edge:p->sql", "from": "objective:initial-capability:send_http_request",
+         "to": "cap:sql", "relation": "enables"}],
+        "capabilities_add": [{"key": "cap:sql", "name": "control_sql_expression"}]})
+    assert report["ok"] is True
+
+    graph = ag.load_graph(root)
+    assert ag.find_node_by_key(graph, "objective:principal") is not None
+    assert _generations(root) == (3, 3)

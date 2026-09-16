@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/research-delta.schema.json",
   "title": "mini-audit research-delta",
-  "description": "The only channel through which an agent contributes to canonical research state (Search Governance v1, R2-1). Objects are addressed by semantic key; the runtime allocates canonical ids. Applied all-or-nothing — a schema error, an unresolvable reference or an identity conflict rejects the whole delta and leaves every artifact untouched. Re-applying the same delta is a no-op, so 'apply twice' is safe.",
+  "description": "The only channel through which an agent contributes to canonical research state (Search Governance v1, R2-1). Objects are addressed by semantic key; the runtime allocates canonical ids. Applied all-or-nothing — a schema error, an unresolvable reference or an identity conflict rejects the whole delta and leaves every artifact untouched. Re-applying the same delta is a no-op, so 'apply twice' is safe. Unknown top-level fields are rejected rather than ignored: a misspelled `capabilites_add` would otherwise be accepted and silently do nothing, which looks exactly like success.",
   "type": "object",
   "required": ["schema_version"],
-  "additionalProperties": true,
+  "additionalProperties": false,
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
     "agent_id": {"type": "string", "minLength": 1},
@@ -18,7 +18,9 @@
     "blocked_paths_add": {"type": "array", "items": {"$ref": "#/$defs/BlockedPathAdd"}},
     "blocked_paths_reopen": {"type": "array", "items": {"$ref": "#/$defs/BlockedPathReopen"}},
     "capabilities_add": {"type": "array", "items": {"$ref": "#/$defs/CapabilityAdd"}},
+    "capabilities_update": {"type": "array", "items": {"$ref": "#/$defs/CapabilityUpdate"}},
     "edges_add": {"type": "array", "items": {"$ref": "#/$defs/EdgeAdd"}},
+    "edges_update": {"type": "array", "items": {"$ref": "#/$defs/EdgeUpdate"}},
     "intents_add": {"type": "array", "items": {"$ref": "#/$defs/IntentAdd"}},
     "candidate_updates": {"type": "array", "items": {"$ref": "#/$defs/CandidateUpdate"}}
   },
@@ -151,6 +153,20 @@
         "confidence": {"enum": ["unknown", "low", "medium", "high"]}
       }
     },
+    "CapabilityUpdate": {
+      "type": "object",
+      "required": ["ref"],
+      "additionalProperties": false,
+      "description": "Change a capability that already exists, addressed by key or canonical id. Identity fields (`name`, `principal`) are deliberately absent: changing them means a different capability, which needs a new key rather than an update.",
+      "properties": {
+        "ref": {"type": "string", "minLength": 1},
+        "status": {"enum": ["proposed", "verified", "refuted"]},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "source_candidates": {"$ref": "#/$defs/RefList"},
+        "source_edges": {"$ref": "#/$defs/RefList"},
+        "confidence": {"enum": ["unknown", "low", "medium", "high"]}
+      }
+    },
     "EdgeAdd": {
       "type": "object",
       "required": ["key", "from", "to", "relation"],
@@ -161,6 +177,19 @@
         "to": {"type": "string", "minLength": 1},
         "relation": {"enum": ["enables", "requires", "bypasses", "breaks_assumption", "escalates_to"]},
         "via_candidate": {"type": "string", "pattern": "^cand-[a-z0-9-]{3,}$", "description": "Identity field when present. This is how a candidate becomes the provenance of a graph edge without the finding having to carry a candidate list."},
+        "status": {"enum": ["proposed", "verified", "blocked", "refuted"]},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "verification_refs": {"$ref": "#/$defs/RefList"},
+        "confidence": {"enum": ["unknown", "low", "medium", "high"]}
+      }
+    },
+    "EdgeUpdate": {
+      "type": "object",
+      "required": ["ref"],
+      "additionalProperties": false,
+      "description": "Change an edge that already exists — typically promoting a frontier edge from `proposed` to `verified`. Identity (`from`/`to`/`relation`/`via_candidate`) is absent for the same reason as in CapabilityUpdate: re-declaring an edge through `edges_add` means restating all of it, and forgetting `via_candidate` turns a status change into a provenance conflict.",
+      "properties": {
+        "ref": {"type": "string", "minLength": 1},
         "status": {"enum": ["proposed", "verified", "blocked", "refuted"]},
         "evidence_refs": {"$ref": "#/$defs/RefList"},
         "verification_refs": {"$ref": "#/$defs/RefList"},

@@ -82,6 +82,18 @@
       "source_path": "methodology/permission-delta-judging.md",
       "modified": false,
       "note": "original; distilled from admin FP rejections"
+    },
+    "methodology/search-governance.md": {
+      "source": "local",
+      "source_path": "methodology/search-governance.md",
+      "modified": false,
+      "note": "original; Search Governance v1 next-round ranking policy (Skill-First Refactor v1)"
+    },
+    "methodology/research-state.md": {
+      "source": "local",
+      "source_path": "methodology/research-state.md",
+      "modified": false,
+      "note": "original; Search Governance v1 state contract (Skill-First Refactor v1)"
     }
   },
   "commit_map": {

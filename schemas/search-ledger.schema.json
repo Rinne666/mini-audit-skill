@@ -2,12 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/search-ledger.schema.json",
   "title": "mini-audit search-ledger",
-  "description": "What the search currently knows, suspects, is blocked on, and intends to investigate next (Search Governance v1, R2-1). This is the research plane, not the finding-verdict plane: agents never write this file. They submit a research delta and the runtime applies it under the Search Governance lock. Semantic keys are the idempotency address; identity fields decide conflicts and mutable fields merge.",
+  "description": "What the search currently knows, suspects, is blocked on, and intends to investigate next (Search Governance v1, R2-1). This is the research plane, not the finding-verdict plane: agents never write this file. They submit a research delta and the runtime applies it under the Search Governance lock. Semantic keys are the idempotency address — unique across every research kind and the attack graph, not per kind — and identity fields decide conflicts while mutable fields merge.",
   "type": "object",
-  "required": ["schema_version", "facts", "assumptions", "open_questions", "blocked_paths", "intents"],
+  "required": ["schema_version", "generation", "facts", "assumptions", "open_questions", "blocked_paths", "intents"],
   "additionalProperties": true,
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Shared with attack-graph.json and bumped by every `research apply`. Equality across the two files means the last transaction was not interrupted. A mismatch is a fail-closed condition, not something to reconcile silently: the runtime sees a coherent snapshot or refuses to reason at all. Note that writers which legitimately touch only one artifact (an objective revision records a ledger fact but deliberately leaves the graph alone) preserve the value rather than bumping it."
+    },
     "audit_id": {"type": "string"},
     "facts": {"type": "array", "items": {"$ref": "#/$defs/Fact"}},
     "assumptions": {"type": "array", "items": {"$ref": "#/$defs/Assumption"}},

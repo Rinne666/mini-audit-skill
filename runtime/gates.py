@@ -55,10 +55,17 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from .atomic_io import sha256_file
 from .schema import load_schema_or_none, validate_instance
+
+
+#: Source name a gate uses to receive the Search Governance artifact bundle
+#: (objective + ledger + graph + candidates + coverage + findings). Cross-artifact
+#: checks cannot name a single path, and pre-seeding is the runner's supported
+#: mechanism for that.
+SEARCH_GOVERNANCE_BUNDLE = "search_governance"
 
 
 class GateError(RuntimeError):
@@ -143,6 +150,95 @@ def check_glob_matches(pattern: str, *, min_matches: int = 1) -> tuple[bool, str
     if len(matches) < max(1, min_matches):
         return False, f"glob matched {len(matches)} file(s), need >= {max(1, min_matches)}: {pattern}", matches
     return True, "", matches
+
+
+# ---------------------------------------------------------------------------
+# Search Governance bundle
+#
+# The L7 closure and saturation checks have to see several artifacts at once,
+# which no single `source` can express. Pre-seeding is the runner's supported
+# mechanism for that, and the bundle is built here rather than inside the
+# checks so validation happens once, in one place.
+#
+# Note what is *not* in `required`: audit-objective.json and attack-graph.json.
+# An audit run before Search Governance existed has neither, and §15 requires
+# that it keep passing. So being "Search Governance-enabled" is *detected* by
+# the artifacts' existence, and only then are they required to be valid — a
+# declared-but-corrupt graph still fails, which is the half that matters.
+# ---------------------------------------------------------------------------
+
+
+def _read_json_if_present(path: Path) -> tuple[Any, Optional[str]]:
+    if not path.exists():
+        return None, None
+    ok, message, data = check_json_parseable(str(path))
+    if not ok:
+        return None, f"{path.name}: {message}"
+    return data, None
+
+
+def build_search_governance_bundle(workdir: os.PathLike[str] | str) -> dict[str, Any]:
+    """Assemble every research-plane artifact into one validated snapshot."""
+    from . import attack_graph as graph_mod
+    from . import research_state as research_state_mod
+
+    workdir = Path(workdir)
+    audit_root = workdir / "mini-audit"
+    failures: list[str] = []
+
+    objective, error = _read_json_if_present(audit_root / "audit-objective.json")
+    if error:
+        failures.append(error)
+    graph, error = _read_json_if_present(audit_root / "attack-graph.json")
+    if error:
+        failures.append(error)
+    ledger, error = _read_json_if_present(audit_root / "search-ledger.json")
+    if error:
+        failures.append(error)
+    coverage, _ = _read_json_if_present(audit_root / "coverage-ledger.json")
+    findings_doc, error = _read_json_if_present(audit_root / "findings.json")
+    if error:
+        failures.append(error)
+
+    for document, schema_name, label in (
+        (objective, "audit-objective", "audit-objective.json"),
+        (graph, "attack-graph", "attack-graph.json"),
+        (ledger, "search-ledger", "search-ledger.json"),
+    ):
+        if document is None:
+            continue
+        schema = load_schema_or_none(schema_name)
+        if schema is None:
+            failures.append(
+                f"schema {schema_name!r} is declared but could not be loaded; "
+                f"cannot validate {label}"
+            )
+            continue
+        errors = validate_instance(document, schema)
+        if errors:
+            failures.append(f"{label}: " + "; ".join(str(e) for e in errors[:3]))
+
+    if isinstance(graph, Mapping):
+        for problem in graph_mod.inconsistencies(graph)[:3]:
+            failures.append(f"attack-graph.json: {problem}")
+    if isinstance(ledger, Mapping) and isinstance(graph, Mapping):
+        try:
+            research_state_mod.verify_generation(ledger, graph)
+        except research_state_mod.ResearchError as exc:
+            failures.append(str(exc))
+
+    return {
+        "enabled": objective is not None and graph is not None,
+        "objective": objective,
+        "graph": graph,
+        "ledger": ledger,
+        "coverage": coverage,
+        "findings": (findings_doc or {}).get("findings", [])
+        if isinstance(findings_doc, Mapping) else [],
+        "candidates": research_state_mod.candidate_store(audit_root),
+        "base_dir": str(workdir),
+        "failures": failures,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -231,14 +327,23 @@ def _check_boundary_sentence(data: Mapping[str, Any], ctx: dict[str, Any]) -> tu
 @register_semantic("every_review_candidate_has_research_metadata")
 def _check_review_candidate_has_research(data: Mapping[str, Any],
                                          ctx: dict[str, Any]) -> tuple[bool, str]:
-    """Every candidate the chamber *accepted* must carry its ``research`` block.
+    """Every candidate the chamber *accepted* must carry usable ``research``.
 
     Search Governance v1 (R2-2) keeps ``research`` optional in
     ``candidate.schema.json`` so a scanner-normalized ``untriaged`` candidate is
     not forced to carry research metadata and existing fixtures stay valid. The
-    strictness therefore lives here, at the gate: a candidate the Review Chamber
-    accepted must say whether it is locally valid, what role it plays, and what
-    it requires or grants. Candidates that were never reviewed are exempt.
+    strictness therefore lives here, at the gate.
+
+    Two levels, because they fail differently:
+
+    * every accepted candidate declares ``local_validity``, ``role`` and
+      ``chain_potential`` — without these the candidate has no research value
+      recorded at all;
+    * a candidate claiming the role ``chain_seed`` or ``prerequisite`` must
+      name at least one structural relationship (``requires_capabilities``,
+      ``grants_capabilities`` or ``blocked_by``). Otherwise the role is a label
+      with no structural meaning: it asserts that this candidate matters to a
+      chain without saying how it connects to one.
     """
     chambers = data.get("chambers")
     if chambers is None:
@@ -247,7 +352,13 @@ def _check_review_candidate_has_research(data: Mapping[str, Any],
     if not isinstance(chambers, list):
         return False, "'chambers' must be a list"
 
+    required_fields = ("local_validity", "role", "chain_potential")
+    structural_roles = ("chain_seed", "prerequisite")
+    structural_fields = ("requires_capabilities", "grants_capabilities", "blocked_by")
+
     missing: list[str] = []
+    incomplete: list[str] = []
+    hollow: list[str] = []
     reviewed = 0
     for chamber in chambers:
         if not isinstance(chamber, Mapping):
@@ -256,16 +367,36 @@ def _check_review_candidate_has_research(data: Mapping[str, Any],
             if not isinstance(candidate, Mapping) or not _candidate_is_reviewed(candidate):
                 continue
             reviewed += 1
+            ident = str(candidate.get("candidate_id") or candidate.get("id") or "?")
             research = candidate.get("research")
             if not isinstance(research, Mapping) or not research:
-                missing.append(str(candidate.get("candidate_id") or candidate.get("id") or "?"))
+                missing.append(ident)
+                continue
+            absent = [field for field in required_fields if field not in research]
+            if absent:
+                incomplete.append(f"{ident} lacks {absent}")
+                continue
+            role = research.get("role")
+            if role in structural_roles and not any(research.get(field)
+                                                    for field in structural_fields):
+                hollow.append(f"{ident} ({role})")
+
+    problems: list[str] = []
     if missing:
-        shown = missing[:5]
-        more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
-        return False, (
-            f"{len(missing)} of {reviewed} reviewed candidate(s) carry no "
-            f"research metadata: {shown}{more}"
+        problems.append(
+            f"{len(missing)} of {reviewed} reviewed candidate(s) carry no research "
+            f"metadata: {missing[:5]}"
         )
+    if incomplete:
+        problems.append(f"incomplete research metadata: {incomplete[:5]}")
+    if hollow:
+        problems.append(
+            f"role asserted without a structural relationship: {hollow[:5]} — a "
+            "chain_seed or prerequisite must declare requires_capabilities, "
+            "grants_capabilities or blocked_by, otherwise the role is only a label"
+        )
+    if problems:
+        return False, "; ".join(problems)
     return True, ""
 
 
@@ -275,6 +406,69 @@ def _candidate_is_reviewed(candidate: Mapping[str, Any]) -> bool:
     if status and status != "untriaged":
         return True
     return bool(candidate.get("verdict") or candidate.get("promotion_recommendation"))
+
+
+def _summarise(failures: "Sequence[str]", limit: int = 4) -> str:
+    shown = "; ".join(failures[:limit])
+    more = f" (+{len(failures) - limit} more)" if len(failures) > limit else ""
+    return shown + more
+
+
+@register_semantic("reported_capability_paths_closed")
+def _check_reported_capability_paths_closed(data: Mapping[str, Any],
+                                            ctx: dict[str, Any]) -> tuple[bool, str]:
+    """Every confirmed finding's reported capability chain must actually close (R2-4).
+
+    Enforced only for a Search Governance-enabled audit: a legacy run has no
+    objective and no graph, so demanding capability refs would fail it for a
+    contract it never signed (§15). Bundle-level failures — a corrupt graph, a
+    schema violation, a ledger/graph generation mismatch — are folded in,
+    because a check that reasons from an invalid graph is reasoning from
+    nothing.
+    """
+    from . import search_closure as closure_mod
+
+    bundle = data if isinstance(data, Mapping) else {}
+    if not bundle.get("enabled"):
+        return True, ""
+    result = closure_mod.evaluate_closure(
+        bundle.get("findings") or [],
+        bundle.get("graph") or {},
+        bundle.get("candidates") or {},
+        base_dir=bundle.get("base_dir"),
+    )
+    failures = list(bundle.get("failures") or []) + list(result.failures)
+    if failures:
+        return False, _summarise(failures)
+    return True, ""
+
+
+@register_semantic("search_saturation_hard_gate")
+def _check_search_saturation_hard_gate(data: Mapping[str, Any],
+                                       ctx: dict[str, Any]) -> tuple[bool, str]:
+    """The two mechanical completion conditions; everything else is a signal (§16).
+
+    Coverage, and "no P0 question left open without evidence". Neither can be
+    satisfied by relabelling: one is a state machine over units, the other
+    requires a reference that resolves to a real file, or a blocker that is
+    still standing.
+    """
+    from . import search_saturation as saturation_mod
+
+    bundle = data if isinstance(data, Mapping) else {}
+    if not bundle.get("enabled"):
+        return True, ""
+    document = saturation_mod.evaluate(
+        ledger=bundle.get("ledger"),
+        graph=bundle.get("graph"),
+        coverage=bundle.get("coverage"),
+        candidates=bundle.get("candidates") or {},
+        base_dir=bundle.get("base_dir"),
+    )
+    failures = list(bundle.get("failures") or []) + list(document["hard_gate"]["failures"])
+    if failures:
+        return False, _summarise(failures)
+    return True, ""
 
 
 @register_semantic("every_confirmed_has_verifier")
@@ -538,6 +732,19 @@ class GateRunner:
                 else:
                     sources[pattern] = parsed
 
+        # 2b. Cross-artifact sources. A check may declare a source that is not a
+        # single file (the Search Governance bundle spans six artifacts), and
+        # the bundle is assembled here from the runner's own workdir so the
+        # gate definition stays self-contained. If the caller pre-seeded one
+        # via `semantic_data`, that wins — which is how tests inject a fixture
+        # without building a filesystem.
+        wants_bundle = any(
+            (raw if isinstance(raw, str) else (raw or {}).get("source")) == SEARCH_GOVERNANCE_BUNDLE
+            for raw in gate.semantic_checks
+        )
+        if wants_bundle and SEARCH_GOVERNANCE_BUNDLE not in sources:
+            sources[SEARCH_GOVERNANCE_BUNDLE] = build_search_governance_bundle(self.workdir)
+
         # 3. semantic checks — each bound to its declared source (v1.1 §3)
         for raw in gate.semantic_checks:
             spec = _norm_semantic(raw)
@@ -676,6 +883,11 @@ DEFAULT_PHASE_GATES: dict[str, dict[str, Any]] = {
             {"check": "every_confirmed_has_verifier", "source": "mini-audit/findings.json"},
             {"check": "coverage_no_planned", "source": "mini-audit/coverage-ledger.json"},
             {"check": "audit_state_terminal_phases", "source": "mini-audit/audit-state.json"},
+            # Search Governance (Phase D). Both are no-ops for an audit that
+            # never declared an objective, so a legacy run keeps passing —
+            # "enabled" is detected from the artifacts, not asserted by a flag.
+            {"check": "reported_capability_paths_closed", "source": SEARCH_GOVERNANCE_BUNDLE},
+            {"check": "search_saturation_hard_gate", "source": SEARCH_GOVERNANCE_BUNDLE},
         ],
     },
     # ------------------------------------------------------------------

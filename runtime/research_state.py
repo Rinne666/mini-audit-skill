@@ -91,6 +91,18 @@ class DeltaSchemaError(ResearchError):
     code = "DELTA_SCHEMA"
 
 
+class ResearchGenerationMismatch(ResearchError):
+    """search-ledger.json and attack-graph.json disagree on generation.
+
+    The two artifacts are written in sequence, so a crash between them can
+    leave one ahead. That is precisely the case no amount of in-memory
+    validation can rule out, which is why it is detected on read and treated
+    as fail-closed rather than reconciled.
+    """
+
+    code = "RESEARCH_GENERATION_MISMATCH"
+
+
 # ---------------------------------------------------------------------------
 # Object model
 # ---------------------------------------------------------------------------
@@ -161,7 +173,9 @@ DELTA_OPS: tuple[tuple[str, str, str, bool], ...] = (
     ("blocked_paths_reopen", "blocked_path", "update", False),
     ("intents_add", "intent", "upsert", False),
     ("capabilities_add", "capability", "upsert", True),
+    ("capabilities_update", "capability", "update", True),
     ("edges_add", "edge", "upsert", True),
+    ("edges_update", "edge", "update", True),
 )
 
 #: Creation defaults, so a delta may stay terse while the canonical object is
@@ -262,6 +276,7 @@ def ledger_path(audit_root: os.PathLike[str] | str) -> Path:
 def empty_ledger(*, audit_id: Optional[str] = None) -> dict[str, Any]:
     ledger: dict[str, Any] = {
         "schema_version": 1,
+        "generation": 1,
         "facts": [],
         "assumptions": [],
         "open_questions": [],
@@ -315,6 +330,83 @@ def require_ledger(audit_root: os.PathLike[str] | str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Generation — what "one transaction" can and cannot promise
+#
+# The research transaction is *not* a filesystem-atomic multi-file commit. It
+# is a validated staged transaction under an exclusive lock with atomic
+# per-file replacement. That guarantees (a) no lost update under concurrency
+# and (b) nothing is written until everything validates. It does not guarantee
+# that a crash between the ledger write and the graph write leaves no trace.
+# The generation counter is how that residue is made detectable: both
+# artifacts carry the same integer as of the last completed apply, so a reader
+# that finds them disagreeing knows it is looking at an interrupted
+# transaction and refuses to reason from it.
+# ---------------------------------------------------------------------------
+
+
+def generation_of(doc: Mapping[str, Any]) -> int:
+    try:
+        return int(doc.get("generation", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def verify_generation(ledger: Mapping[str, Any], graph: Mapping[str, Any]) -> None:
+    """Refuse to use a ledger and a graph that came from different applies."""
+    ledger_generation = generation_of(ledger)
+    graph_generation = generation_of(graph)
+    if ledger_generation != graph_generation:
+        ahead, behind = (
+            ("search-ledger.json", "attack-graph.json")
+            if ledger_generation > graph_generation
+            else ("attack-graph.json", "search-ledger.json")
+        )
+        raise ResearchGenerationMismatch(
+            f"{ahead} is at generation {max(ledger_generation, graph_generation)} "
+            f"but {behind} is at {min(ledger_generation, graph_generation)}; "
+            "a previous research transaction was interrupted between the two "
+            "writes, so the pair is not a coherent snapshot"
+        )
+
+
+def align_generation(ledger: dict[str, Any], graph: dict[str, Any], *,
+                     ledger_created: bool, graph_created: bool) -> None:
+    """Give a freshly created artifact the other one's counter.
+
+    Two *existing* artifacts that disagree are a fail-closed condition (see
+    :func:`verify_generation`). A newly created one adopts the existing
+    counter instead of starting a divergent history — otherwise a half-created
+    audit would be permanently incoherent by construction.
+    """
+    if ledger_created and not graph_created:
+        ledger["generation"] = generation_of(graph)
+    elif graph_created and not ledger_created:
+        graph["generation"] = generation_of(ledger)
+
+
+def load_research_state(audit_root: os.PathLike[str] | str) -> dict[str, Any]:
+    """Load the ledger and the graph as one checked snapshot.
+
+    Readers that need both (the governor, saturation, the L7 closure check,
+    ``graph`` queries) go through here so the generation check can never be
+    forgotten at a call site. Neither artifact is required to exist: callers
+    distinguish "no research state yet" by ``exists``.
+    """
+    audit_root = Path(audit_root)
+    ledger = load_ledger(audit_root)
+    graph = graph_mod.load_graph(audit_root)
+    if ledger is None and graph is None:
+        return {"exists": False, "ledger": None, "graph": None, "audit_root": audit_root}
+    if ledger is None:
+        graph = graph or {}
+        return {"exists": False, "ledger": None, "graph": graph, "audit_root": audit_root}
+    if graph is None:
+        return {"exists": True, "ledger": ledger, "graph": None, "audit_root": audit_root}
+    verify_generation(ledger, graph)
+    return {"exists": True, "ledger": ledger, "graph": graph, "audit_root": audit_root}
+
+
+# ---------------------------------------------------------------------------
 # Lookup and merge helpers
 # ---------------------------------------------------------------------------
 
@@ -338,6 +430,37 @@ def find_by_id(ledger: Mapping[str, Any], kind: str, obj_id: str) -> Optional[di
     for obj in iter_objects(ledger, kind):
         if obj.get("id") == obj_id:
             return obj
+    return None
+
+
+#: Every collection a semantic key can be bound to, in a stable order so error
+#: messages are reproducible.
+KEY_KINDS: tuple[str, ...] = (
+    "fact", "assumption", "open_question", "blocked_path", "intent",
+)
+
+
+def find_key_anywhere(ledger: Mapping[str, Any], graph: Mapping[str, Any],
+                      key: str) -> Optional[tuple[str, dict[str, Any]]]:
+    """Resolve a semantic key anywhere in the Search Governance namespace.
+
+    A key is unique across the *whole* namespace, not per kind. Without this,
+    ``fact:shared`` could later be joined by ``assumption:shared`` and a
+    reference to ``shared`` would become ambiguous — and every reference in a
+    delta is resolved by key first. Graph nodes report their node type
+    (``principal`` / ``capability`` / ``goal``) so that a capability cannot
+    shadow the objective's principal node.
+    """
+    for kind in KEY_KINDS:
+        obj = find_by_key(ledger, kind, key)
+        if obj is not None:
+            return (kind, obj)
+    node = graph_mod.find_node_by_key(graph, key)
+    if node is not None:
+        return (str(node.get("type") or "capability"), node)
+    edge = graph_mod.find_edge_by_key(graph, key)
+    if edge is not None:
+        return ("edge", edge)
     return None
 
 
@@ -476,6 +599,7 @@ class _Transaction:
         self.touched_candidate_payloads: dict[Path, dict[str, Any]] = {}
         self.key_to_id: dict[str, str] = {}
         self.planned_kinds: dict[str, str] = {}
+        self.planned_ids: dict[str, str] = {}
         self.created: dict[str, list[str]] = {}
         self.merged: dict[str, list[str]] = {}
         self.warnings: list[str] = []
@@ -536,18 +660,34 @@ def _apply_locked(audit_root: Path, delta: Mapping[str, Any], *,
             f"unsupported research-delta schema_version {delta.get('schema_version')!r}"
         )
 
+    # Work on a copy. Reference resolution rewrites keys into canonical ids in
+    # place, and doing that to the caller's object means a delta can only be
+    # applied once — the second attempt would try to resolve ids that the graph
+    # is still in the middle of creating.
+    delta = copy.deepcopy(dict(delta))
+
     # Step 2: read every artifact this transaction may touch.
     objective = require_objective(audit_root)
     txn = _Transaction(audit_root, delta)
     txn.objective_principal = str(objective.get("principal") or "")
     ledger = load_ledger(audit_root)
+    graph = graph_mod.load_graph(audit_root)
+    if ledger is not None and graph is not None:
+        # Fail closed *before* mutating: a previous apply interrupted between
+        # its two writes leaves a pair that must not be reasoned from.
+        verify_generation(ledger, graph)
     txn.ledger = copy.deepcopy(ledger) if ledger is not None else empty_ledger(
         audit_id=objective.get("audit_id")
     )
-    graph = graph_mod.load_graph(audit_root)
-    txn.graph = copy.deepcopy(graph) if graph is not None else graph_mod.empty_graph(
-        audit_id=objective.get("audit_id")
-    )
+    if graph is not None:
+        txn.graph = copy.deepcopy(graph)
+    else:
+        # A missing graph is bootstrapped from the objective so the principal
+        # and goal nodes exist before any edge is asserted against them.
+        txn.graph = graph_mod.empty_graph(audit_id=objective.get("audit_id"))
+        graph_mod.seed_from_objective(txn.graph, objective)
+    align_generation(txn.ledger, txn.graph,
+                     ledger_created=ledger is None, graph_created=graph is None)
     txn.candidates = candidate_store(audit_root)
     previous_status = {
         obj.get("id"): obj.get("status") for obj in iter_objects(txn.ledger, "assumption")
@@ -576,17 +716,29 @@ def _apply_locked(audit_root: Path, delta: Mapping[str, Any], *,
             planned.append((field_name, kind, mode, is_graph, entry))
 
     # Step 7-8: resolve existing keys and allocate ids for every new object.
+    # A semantic key is unique across the whole namespace, so a key already
+    # bound to another kind is a conflict rather than a second object — and
+    # every reference in a delta is resolved by key first, so allowing the
+    # duplicate would make existing references ambiguous.
     counters: dict[str, int] = {}
     for field_name, kind, mode, is_graph, entry in planned:
         if mode == "update":
             continue
         key = str(entry["key"])
+        bound = find_key_anywhere(txn.ledger, txn.graph, key)
+        if bound is not None and bound[0] != kind:
+            raise ResearchKeyConflict(
+                f"{field_name} declares key {key!r}, which is already bound to a "
+                f"{bound[0]} ({bound[1].get('id')}); semantic keys are unique across "
+                f"every research kind and the attack graph, not per kind"
+            )
         existing_id = _existing_id_by_key(txn, kind, key)
         if existing_id is not None:
             txn.key_to_id[key] = existing_id
         else:
             txn.key_to_id[key] = _allocate(txn, kind, is_graph, counters)
         txn.planned_kinds[key] = kind
+        txn.planned_ids[txn.key_to_id[key]] = kind
 
     # Step 9-11: resolve forward references, compare identity, merge or create.
     for field_name, kind, mode, is_graph, entry in planned:
@@ -625,7 +777,12 @@ def _apply_locked(audit_root: Path, delta: Mapping[str, Any], *,
     graph_mod.validate_graph_raise(txn.graph)
     validate_ledger_raise(txn.ledger)
 
-    # Step 15-16: nothing has been written yet; write only now.
+    # Step 15-16: nothing has been written yet; write only now. Both research
+    # artifacts carry one generation, bumped together, so an interruption
+    # between the two writes is detectable rather than silent.
+    generation = max(generation_of(txn.ledger), generation_of(txn.graph)) + 1
+    txn.ledger["generation"] = generation
+    txn.graph["generation"] = generation
     write_json_atomic(ledger_path(audit_root), {**txn.ledger, "updated_at": utc_now()})
     graph_mod.save_graph(audit_root, txn.graph)
     for path, payload in txn.touched_candidate_payloads.items():
@@ -635,6 +792,7 @@ def _apply_locked(audit_root: Path, delta: Mapping[str, Any], *,
         "ok": True,
         "command": "research.apply",
         "agent": agent or "",
+        "generation": generation,
         "created": {k: sorted(v) for k, v in txn.created.items()},
         "merged": {k: sorted(v) for k, v in txn.merged.items()},
         "key_to_id": dict(sorted(txn.key_to_id.items())),
@@ -695,7 +853,11 @@ def _lookup_any(txn: _Transaction, ref: str,
     """Return ``(kind, canonical_id)`` for a cross-artifact reference.
 
     Consults objects created by this same delta first, which is what makes
-    forward references resolvable.
+    forward references resolvable. Returns ``None`` when the reference is
+    genuinely absent, so callers can raise their own contextual error — but
+    when the key *does* exist under a different kind it raises here instead,
+    because "unknown reference" would send the author looking in the wrong
+    place.
     """
     planned = txn.planned_kinds.get(ref)
     if planned is not None:
@@ -707,21 +869,48 @@ def _lookup_any(txn: _Transaction, ref: str,
             raise UnknownReference(f"reference {ref!r} is not a graph node")
         return (planned, txn.key_to_id[ref])
 
+    # A canonical id belonging to an object this same delta is creating. Agents
+    # should address those by key (the id does not exist yet from their side),
+    # but resolution is idempotent: a delta that has already been through this
+    # step must not fail on its second pass.
+    planned_id_kind = txn.planned_ids.get(ref)
+    if planned_id_kind is not None:
+        if target_kind is not None and planned_id_kind != target_kind:
+            raise UnknownReference(
+                f"reference {ref!r} is a {planned_id_kind}, not a {target_kind}"
+            )
+        if target_kind is None and planned_id_kind != "capability":
+            raise UnknownReference(f"reference {ref!r} is not a graph node")
+        return (planned_id_kind, ref)
+
     if target_kind == "capability":
         node = (graph_mod.find_node_by_key(txn.graph, ref)
                 or graph_mod.find_node_by_id(txn.graph, ref))
-        return ("capability", str(node.get("id"))) if node else None
-    if target_kind == "edge":
+        if node is not None:
+            return ("capability", str(node.get("id")))
+    elif target_kind == "edge":
         edge = (graph_mod.find_edge_by_key(txn.graph, ref)
                 or graph_mod.find_edge_by_id(txn.graph, ref))
-        return ("edge", str(edge.get("id"))) if edge else None
-    if target_kind is not None:
-        obj = find_by_key(txn.ledger, target_kind, ref) or find_by_id(txn.ledger, target_kind, ref)
-        return (target_kind, str(obj.get("id"))) if obj else None
+        if edge is not None:
+            return ("edge", str(edge.get("id")))
+    elif target_kind is not None:
+        obj = (find_by_key(txn.ledger, target_kind, ref)
+               or find_by_id(txn.ledger, target_kind, ref))
+        if obj is not None:
+            return (target_kind, str(obj.get("id")))
+    else:
+        node = (graph_mod.find_node_by_key(txn.graph, ref)
+                or graph_mod.find_node_by_id(txn.graph, ref))
+        if node is not None:
+            return ("node", str(node.get("id")))
 
-    node = (graph_mod.find_node_by_key(txn.graph, ref)
-            or graph_mod.find_node_by_id(txn.graph, ref))
-    return ("node", str(node.get("id"))) if node else None
+    elsewhere = find_key_anywhere(txn.ledger, txn.graph, ref)
+    if elsewhere is not None:
+        raise UnknownReference(
+            f"reference {ref!r} resolves to a {elsewhere[0]} "
+            f"({elsewhere[1].get('id')}), not a {target_kind or 'graph node'}"
+        )
+    return None
 
 
 def _resolve_target(txn: _Transaction, field_name: str, kind: str, mode: str,
