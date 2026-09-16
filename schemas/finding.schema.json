@@ -71,6 +71,12 @@
         "security_invariant": {"type": "string"},
         "before_capability": {"type": "string"},
         "after_capability": {"type": "string"},
+        "capability_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^CAP-[0-9]+$"},
+          "description": "The single Search Governance bridge out of the finding-verdict plane (Search Governance v1, R2-4). Optional in the schema so existing findings and fixtures stay valid; a Search Governance-enabled L7 requires it on every confirmed finding. Deliberately a resolvable id rather than a string comparison against a capability name, which would break on the first rewording."
+        },
         "crossed": {"type": "boolean"}
       }
     },

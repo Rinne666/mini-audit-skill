@@ -28,6 +28,53 @@ gated are listed explicitly in SKILL.md § Gate coverage — they either write
 into a shared document or have no artifact contract, so gating them would block
 legitimate completion rather than enforce anything real.
 
+## Search Governance
+
+A phase pipeline answers "is this finding real?". It does not answer "what should
+we search next, and which half-finished lead should we keep?". Search Governance
+adds a research plane beside the verdict plane:
+
+```text
+Audit Objective   (mini-audit/audit-objective.json)   what this audit must prove
+Search Ledger     (mini-audit/search-ledger.json)     known / suspected / blocked / intended
+Attack Graph      (mini-audit/attack-graph.json)      capability nodes and their conversions
+SearchGovernanceLock (.search-governance.lock)        one lock over the whole transaction
+```
+
+The invariants that make it safe to run long:
+
+* **The objective cannot be moved by the thing being measured.** An L1 agent only
+  writes a *proposal* under `agents/<id>/scratch/`; `objective init --from-proposal`
+  promotes it. Afterwards the objective is immutable — `objective replace` needs
+  `--force` **and** `--reason`, increments `revision`, appends a supersedes entry
+  carrying the previous content hash, and records a system fact in the ledger.
+* **A delta is idempotent and all-or-nothing.** Objects are addressed by a stable
+  semantic key; the runtime allocates the canonical id. Re-submitting a delta is a
+  no-op. Two objects sharing a key must agree on their identity fields, otherwise
+  the *entire* delta is refused — a partially applied delta would leave the agent
+  unable to tell which of its claims took effect.
+* **"Not exploitable yet" is not "disproved".** A locally real bug missing a
+  prerequisite becomes a *blocked path* carrying its blocker, evidence, reopen
+  conditions and priority. Disproving the assumption it depends on reopens it;
+  supporting that assumption closes it with `close_reason = blocker_supported`.
+  Neither direction rewrites the candidate's verdict.
+* **No node type the runtime cannot check.** v1 allows `principal`, `capability`
+  and `goal` only; `state` was dropped rather than shipped unverified.
+
+```bash
+mini-audit-runtime objective init --from-proposal <path>
+mini-audit-runtime objective replace --from <file> --force --reason "..."
+mini-audit-runtime objective show
+mini-audit-runtime research apply <delta.json>
+mini-audit-runtime research status
+```
+
+Search Governance is currently at **Phase A–D of its own plan**: research state,
+attack graph, objective bootstrap, the lock, and the L1/L6 gate integration are
+implemented and tested. The search governor, saturation reporting and the
+long-horizon replay evaluator are the remaining phases. See SKILL.md § Search
+Governance for the full contract.
+
 ## Repository layout
 
 ```
@@ -38,7 +85,9 @@ runtime/                              # deterministic layer (Python 3.9+, stdlib
   state.py gates.py schema.py coverage.py findings.py scheduler.py
   sandbox.py sandbox_backend.py source_identity.py diff_scope.py sarif.py export.py
   fingerprint.py atomic_io.py cli.py
+  objective.py research_state.py attack_graph.py search_lock.py   # Search Governance v1
 schemas/                              # JSON Schema for audit-state / finding / coverage / candidate / phase-result
+                                      # + audit-objective / search-ledger / research-delta / attack-graph
 .github/workflows/ci.yml              # the checks below, run on every push / PR
 scripts/
   mini-audit-runtime                  # CLI launcher
@@ -93,7 +142,7 @@ Sources that are not vendored (`Claude-BugHunter`, `strix`) currently carry an
 | eval fixtures | 30 |
 | first-class roles | 7 |
 | phase gates declared | 38 |
-| runtime version | 1.1.1 |
+| runtime version | 1.2.0 |
 | commands: full / partial / stub | 8 / 5 / 4 |
 <!-- END auto-counts -->
 

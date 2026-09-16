@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/research-delta.schema.json",
+  "title": "mini-audit research-delta",
+  "description": "The only channel through which an agent contributes to canonical research state (Search Governance v1, R2-1). Objects are addressed by semantic key; the runtime allocates canonical ids. Applied all-or-nothing — a schema error, an unresolvable reference or an identity conflict rejects the whole delta and leaves every artifact untouched. Re-applying the same delta is a no-op, so 'apply twice' is safe.",
+  "type": "object",
+  "required": ["schema_version"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "agent_id": {"type": "string", "minLength": 1},
+    "phase": {"type": "string", "minLength": 1},
+    "facts_add": {"type": "array", "items": {"$ref": "#/$defs/FactAdd"}},
+    "assumptions_add": {"type": "array", "items": {"$ref": "#/$defs/AssumptionAdd"}},
+    "assumptions_update": {"type": "array", "items": {"$ref": "#/$defs/AssumptionUpdate"}},
+    "questions_add": {"type": "array", "items": {"$ref": "#/$defs/QuestionAdd"}},
+    "questions_resolve": {"type": "array", "items": {"$ref": "#/$defs/QuestionResolve"}},
+    "blocked_paths_add": {"type": "array", "items": {"$ref": "#/$defs/BlockedPathAdd"}},
+    "blocked_paths_reopen": {"type": "array", "items": {"$ref": "#/$defs/BlockedPathReopen"}},
+    "capabilities_add": {"type": "array", "items": {"$ref": "#/$defs/CapabilityAdd"}},
+    "edges_add": {"type": "array", "items": {"$ref": "#/$defs/EdgeAdd"}},
+    "intents_add": {"type": "array", "items": {"$ref": "#/$defs/IntentAdd"}},
+    "candidate_updates": {"type": "array", "items": {"$ref": "#/$defs/CandidateUpdate"}}
+  },
+  "$defs": {
+    "RefList": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "FactAdd": {
+      "type": "object",
+      "required": ["key", "claim"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "claim": {"type": "string", "minLength": 1},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "source_refs": {"$ref": "#/$defs/RefList"},
+        "confidence": {"enum": ["unknown", "low", "medium", "high"]}
+      }
+    },
+    "AssumptionAdd": {
+      "type": "object",
+      "required": ["key", "claim"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "claim": {"type": "string", "minLength": 1},
+        "status": {"enum": ["unverified", "supported", "disproved"]},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "source_refs": {"$ref": "#/$defs/RefList"},
+        "depended_on_by": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "AssumptionUpdate": {
+      "type": "object",
+      "required": ["ref"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"type": "string", "minLength": 1, "description": "Semantic key or canonical id (A-…) of an assumption that must already exist. An update never creates."},
+        "status": {"enum": ["unverified", "supported", "disproved"]},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "source_refs": {"$ref": "#/$defs/RefList"},
+        "depended_on_by": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "QuestionAdd": {
+      "type": "object",
+      "required": ["key", "question"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "question": {"type": "string", "minLength": 1},
+        "priority": {"enum": ["P0", "P1", "P2"]},
+        "status": {"enum": ["open", "resolved", "refuted", "deferred"]},
+        "reason": {"type": "string"},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "reopen_if": {"$ref": "#/$defs/RefList"},
+        "attempt_refs": {"$ref": "#/$defs/RefList"},
+        "blocked_path_ref": {"type": "string", "minLength": 1},
+        "related_candidates": {"$ref": "#/$defs/RefList"},
+        "related_capabilities": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "QuestionResolve": {
+      "type": "object",
+      "required": ["ref", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"type": "string", "minLength": 1},
+        "status": {"enum": ["resolved", "refuted", "deferred"]},
+        "reason": {"type": "string"},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "reopen_if": {"$ref": "#/$defs/RefList"},
+        "attempt_refs": {"$ref": "#/$defs/RefList"},
+        "blocked_path_ref": {"type": "string", "minLength": 1}
+      }
+    },
+    "BlockedPathAdd": {
+      "type": "object",
+      "required": ["key", "candidate_id", "blocker"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "candidate_id": {"type": "string", "pattern": "^cand-[a-z0-9-]{3,}$"},
+        "blocker": {
+          "type": "object",
+          "required": ["type", "claim"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {"type": "string", "minLength": 1},
+            "claim": {"type": "string", "minLength": 1},
+            "assumption_ref": {"type": "string", "minLength": 1}
+          }
+        },
+        "status": {"enum": ["blocked", "reopened", "closed"]},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "priority": {"enum": ["low", "medium", "high"]},
+        "reopen_if": {"$ref": "#/$defs/RefList"},
+        "attempt_refs": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "BlockedPathReopen": {
+      "type": "object",
+      "required": ["ref"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"type": "string", "minLength": 1},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "priority": {"enum": ["low", "medium", "high"]},
+        "reopen_if": {"$ref": "#/$defs/RefList"},
+        "attempt_refs": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "CapabilityAdd": {
+      "type": "object",
+      "required": ["key", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1, "description": "Identity field, together with principal. The same name held by a different principal is a different capability."},
+        "principal": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identity field. Defaults to the canonical objective's principal when omitted, so the identity stays deterministic without the author repeating it."
+        },
+        "status": {"enum": ["proposed", "verified", "refuted"]},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "source_candidates": {"$ref": "#/$defs/RefList"},
+        "source_edges": {"$ref": "#/$defs/RefList"},
+        "confidence": {"enum": ["unknown", "low", "medium", "high"]}
+      }
+    },
+    "EdgeAdd": {
+      "type": "object",
+      "required": ["key", "from", "to", "relation"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "from": {"type": "string", "minLength": 1, "description": "Node id (PRIN-/CAP-/GOAL-) or the semantic key of a capability created in the same delta — forward references resolve before anything is written."},
+        "to": {"type": "string", "minLength": 1},
+        "relation": {"enum": ["enables", "requires", "bypasses", "breaks_assumption", "escalates_to"]},
+        "via_candidate": {"type": "string", "pattern": "^cand-[a-z0-9-]{3,}$", "description": "Identity field when present. This is how a candidate becomes the provenance of a graph edge without the finding having to carry a candidate list."},
+        "status": {"enum": ["proposed", "verified", "blocked", "refuted"]},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "verification_refs": {"$ref": "#/$defs/RefList"},
+        "confidence": {"enum": ["unknown", "low", "medium", "high"]}
+      }
+    },
+    "IntentAdd": {
+      "type": "object",
+      "required": ["key", "question_ref", "strategy"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "question_ref": {"type": "string", "minLength": 1},
+        "strategy": {"type": "string", "minLength": 1},
+        "priority": {"enum": ["P0", "P1", "P2"]},
+        "status": {"enum": ["proposed", "assigned", "done", "dropped"]},
+        "reason": {"type": "string"},
+        "assigned_agent": {"type": "string"},
+        "attempt_refs": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "CandidateUpdate": {
+      "type": "object",
+      "required": ["candidate_id", "research"],
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "pattern": "^cand-[a-z0-9-]{3,}$",
+          "description": "Candidates keep their existing author-supplied ids; they are not migrated onto semantic keys. The patch must resolve to a real candidate — an orphan update is refused."
+        },
+        "research": {"$ref": "#/$defs/CandidateResearch"}
+      }
+    },
+    "CandidateResearch": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "local_validity": {
+          "enum": ["unknown", "verified", "refuted"],
+          "description": "Whether the local bug is real — a different axis from the candidate's security verdict."
+        },
+        "role": {"enum": ["standalone", "chain_seed", "prerequisite", "unknown"]},
+        "chain_potential": {"enum": ["low", "medium", "high"]},
+        "requires_capabilities": {"$ref": "#/$defs/RefList"},
+        "grants_capabilities": {"$ref": "#/$defs/RefList"},
+        "depends_on_assumptions": {"$ref": "#/$defs/RefList"},
+        "breaks_assumptions": {"$ref": "#/$defs/RefList"},
+        "blocked_by": {"$ref": "#/$defs/RefList"},
+        "reopen_conditions": {"$ref": "#/$defs/RefList"}
+      }
+    }
+  }
+}

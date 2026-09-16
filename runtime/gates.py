@@ -228,6 +228,55 @@ def _check_boundary_sentence(data: Mapping[str, Any], ctx: dict[str, Any]) -> tu
     return True, ""
 
 
+@register_semantic("every_review_candidate_has_research_metadata")
+def _check_review_candidate_has_research(data: Mapping[str, Any],
+                                         ctx: dict[str, Any]) -> tuple[bool, str]:
+    """Every candidate the chamber *accepted* must carry its ``research`` block.
+
+    Search Governance v1 (R2-2) keeps ``research`` optional in
+    ``candidate.schema.json`` so a scanner-normalized ``untriaged`` candidate is
+    not forced to carry research metadata and existing fixtures stay valid. The
+    strictness therefore lives here, at the gate: a candidate the Review Chamber
+    accepted must say whether it is locally valid, what role it plays, and what
+    it requires or grants. Candidates that were never reviewed are exempt.
+    """
+    chambers = data.get("chambers")
+    if chambers is None:
+        flat = data.get("valid_candidates") or data.get("candidates")
+        chambers = [data] if flat else []
+    if not isinstance(chambers, list):
+        return False, "'chambers' must be a list"
+
+    missing: list[str] = []
+    reviewed = 0
+    for chamber in chambers:
+        if not isinstance(chamber, Mapping):
+            continue
+        for candidate in (chamber.get("valid_candidates") or chamber.get("candidates") or []):
+            if not isinstance(candidate, Mapping) or not _candidate_is_reviewed(candidate):
+                continue
+            reviewed += 1
+            research = candidate.get("research")
+            if not isinstance(research, Mapping) or not research:
+                missing.append(str(candidate.get("candidate_id") or candidate.get("id") or "?"))
+    if missing:
+        shown = missing[:5]
+        more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
+        return False, (
+            f"{len(missing)} of {reviewed} reviewed candidate(s) carry no "
+            f"research metadata: {shown}{more}"
+        )
+    return True, ""
+
+
+def _candidate_is_reviewed(candidate: Mapping[str, Any]) -> bool:
+    """A candidate is 'reviewed' once it left the untriaged scanner state."""
+    status = str(candidate.get("status") or "").strip().lower()
+    if status and status != "untriaged":
+        return True
+    return bool(candidate.get("verdict") or candidate.get("promotion_recommendation"))
+
+
 @register_semantic("every_confirmed_has_verifier")
 def _check_every_confirmed_has_verifier(data: Mapping[str, Any], ctx: dict[str, Any]) -> tuple[bool, str]:
     """Applied to findings.json: every confirmed finding must have a verifier."""
@@ -543,6 +592,14 @@ DEFAULT_PHASE_GATES: dict[str, dict[str, Any]] = {
         "name": "L1",
         "required": [
             {"path": "mini-audit/attack-surface/intent-corpus.json", "parse_json": True},
+            # Search Governance v1, R2-3: an audit with no declared objective has
+            # no target, and "distance to goal" is meaningless without one. Both
+            # canonical artifacts are required, not the L1 proposal — the gate
+            # reads what the runtime promoted, not what an agent wrote.
+            {"path": "mini-audit/audit-objective.json", "parse_json": True,
+             "schema": "audit-objective"},
+            {"path": "mini-audit/search-ledger.json", "parse_json": True,
+             "schema": "search-ledger"},
         ],
         "semantic_checks": [
             {"check": "non_empty", "source": "mini-audit/attack-surface/intent-corpus.json"},
@@ -584,6 +641,9 @@ DEFAULT_PHASE_GATES: dict[str, dict[str, Any]] = {
         "semantic_checks": [
             {"check": "every_chamber_closed", "source": "chambers"},
             {"check": "every_valid_candidate_has_boundary_sentence", "source": "chambers"},
+            # R2-2: strictness for `research` lives at the gate, not in the
+            # candidate schema, so scanner output stays backward compatible.
+            {"check": "every_review_candidate_has_research_metadata", "source": "chambers"},
         ],
     },
     "L6b": {

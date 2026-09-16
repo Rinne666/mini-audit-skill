@@ -36,3 +36,8 @@ mini-audit/agents/
 mini-audit/tmp/
 mini-audit/diff-scope.json
 mini-audit/reports/
+# Search Governance v1 (control plane, research plane, write lock)
+mini-audit/audit-objective.json
+mini-audit/search-ledger.json
+mini-audit/attack-graph.json
+mini-audit/.search-governance.lock

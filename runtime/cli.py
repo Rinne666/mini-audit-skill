@@ -56,6 +56,13 @@ from .findings import (
     validate_finding,
 )
 from .gates import GateError, GateResult, GateRunner, gate_for, has_gate
+from . import attack_graph as graph_mod
+from . import objective as objective_mod
+from . import research_state as research_mod
+from .attack_graph import GraphError
+from .objective import ObjectiveError
+from .research_state import ResearchError
+from .search_lock import BUSY_EXIT_CODE, SearchLockBusy, search_governance_lock
 from .sarif import normalize_sarif, normalize_sarif_file
 from .sandbox import (
     EXECUTION_KINDS,
@@ -725,6 +732,94 @@ def _task_fingerprint(lease: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Search Governance (Search Governance v1, R2-3 / R2-1)
+# ---------------------------------------------------------------------------
+
+
+def _load_json_arg(path: str, what: str) -> Any:
+    p = Path(path)
+    if not p.exists():
+        _err(f"{what} not found at {path}")
+        raise SystemExit(2)
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _err(f"{what} at {path} is not valid JSON: {exc}")
+        raise SystemExit(2)
+
+
+def _objective_summary(audit_root: Path, doc: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "path": str(objective_mod.objective_path(audit_root)),
+        "revision": doc.get("revision"),
+        "principal": doc.get("principal"),
+        "target_capabilities": doc.get("target_capabilities"),
+        "content_hash": objective_mod.content_hash(doc),
+        "supersedes_count": len(doc.get("supersedes") or []),
+    }
+
+
+def cmd_objective_init(args: argparse.Namespace) -> int:
+    audit_root = _resolve_audit_root(args)
+    proposal = _load_json_arg(args.from_proposal, "objective proposal")
+    if not isinstance(proposal, dict):
+        _err("an objective proposal must be a JSON object")
+    doc = objective_mod.init_and_bootstrap(
+        audit_root, proposal, audit_id=getattr(args, "audit_id", None), agent=args.agent,
+    )
+    _emit({
+        "ok": True,
+        "command": "objective.init",
+        "objective": _objective_summary(audit_root, doc),
+        "ledger": str(research_mod.ledger_path(audit_root)),
+        "graph": str(graph_mod.graph_path(audit_root)),
+    })
+    return 0
+
+
+def cmd_objective_replace(args: argparse.Namespace) -> int:
+    audit_root = _resolve_audit_root(args)
+    if not args.force:
+        _err("replacing the audit objective requires --force")
+    replacement = _load_json_arg(args.from_file, "objective replacement")
+    if not isinstance(replacement, dict):
+        _err("an objective replacement must be a JSON object")
+    doc = objective_mod.replace_and_record(
+        audit_root, replacement, force=True, reason=args.reason, agent=args.agent,
+    )
+    _emit({
+        "ok": True,
+        "command": "objective.replace",
+        "objective": _objective_summary(audit_root, doc),
+        "superseded": (doc.get("supersedes") or [])[-1],
+    })
+    return 0
+
+
+def cmd_objective_show(args: argparse.Namespace) -> int:
+    audit_root = _resolve_audit_root(args)
+    with search_governance_lock(audit_root, exclusive=False, operation="objective show"):
+        doc = objective_mod.require_objective(audit_root)
+    _emit({"ok": True, "command": "objective.show", "objective": doc,
+           "content_hash": objective_mod.content_hash(doc)})
+    return 0
+
+
+def cmd_research_apply(args: argparse.Namespace) -> int:
+    audit_root = _resolve_audit_root(args)
+    delta = _load_json_arg(args.delta, "research delta")
+    if not isinstance(delta, dict):
+        _err("a research delta must be a JSON object")
+    _emit(research_mod.apply_delta(audit_root, delta, agent=args.agent))
+    return 0
+
+
+def cmd_research_status(args: argparse.Namespace) -> int:
+    _emit(research_mod.research_status(_resolve_audit_root(args)))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mini-audit-runtime",
@@ -905,6 +1000,49 @@ def build_parser() -> argparse.ArgumentParser:
     s_lease_run.add_argument("--agent-id", default=None)
     s_lease_run.set_defaults(func=cmd_run_with_lease)
 
+    # objective (Search Governance control plane, R2-3)
+    s_objective = add_sub("objective", help="audit objective operations")
+    s_objective_sub = s_objective.add_subparsers(dest="subcommand", required=True)
+
+    s_obj_init = s_objective_sub.add_parser("init", parents=[audit_root_parent],
+                                            help="promote an L1 objective proposal")
+    s_obj_init.add_argument("--from-proposal", required=True,
+                            help="path to agents/<id>/scratch/objective-proposal.json")
+    s_obj_init.add_argument("--audit-id", default=None)
+    s_obj_init.add_argument("--agent", default=None, help="recorded in the lock file")
+    s_obj_init.set_defaults(func=cmd_objective_init)
+
+    s_obj_replace = s_objective_sub.add_parser(
+        "replace", parents=[audit_root_parent],
+        help="revise the objective (both --force and --reason are required)")
+    s_obj_replace.add_argument("--from", dest="from_file", required=True,
+                               help="path to the replacement objective JSON")
+    s_obj_replace.add_argument("--force", action="store_true", required=True,
+                               help="required: replacing an objective is never implicit")
+    s_obj_replace.add_argument("--reason", required=True,
+                               help="required: a replaced objective must record why")
+    s_obj_replace.add_argument("--agent", default=None, help="recorded in the lock file")
+    s_obj_replace.set_defaults(func=cmd_objective_replace)
+
+    s_obj_show = s_objective_sub.add_parser("show", parents=[audit_root_parent],
+                                            help="show the canonical objective")
+    s_obj_show.set_defaults(func=cmd_objective_show)
+
+    # research (Search Governance research plane, R2-1)
+    s_research = add_sub("research", help="research state operations")
+    s_research_sub = s_research.add_subparsers(dest="subcommand", required=True)
+
+    s_res_apply = s_research_sub.add_parser(
+        "apply", parents=[audit_root_parent],
+        help="apply a research delta; succeeds whole or changes nothing")
+    s_res_apply.add_argument("delta", help="path to research-delta.json")
+    s_res_apply.add_argument("--agent", default=None, help="recorded in the lock file")
+    s_res_apply.set_defaults(func=cmd_research_apply)
+
+    s_res_status = s_research_sub.add_parser("status", parents=[audit_root_parent],
+                                             help="summarise the research state")
+    s_res_status.set_defaults(func=cmd_research_status)
+
     return p
 
 
@@ -913,9 +1051,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.func(args) or 0)
+    except SearchLockBusy as exc:
+        # A busy Search Governance lock is a retryable condition, not a bad
+        # request, so it gets its own exit code (3) and a machine-readable
+        # holder, rather than being folded into the generic failure path.
+        _emit(exc.to_dict(), exit_code=BUSY_EXIT_CODE)
+        return BUSY_EXIT_CODE
     except (StateTransitionError, AtomicIOError, FindingValidationError,
-            CoverageLedgerError, GateError, SourceIdentityError, ValueError) as exc:
-        _err(str(exc))
+            CoverageLedgerError, GateError, SourceIdentityError,
+            ObjectiveError, ResearchError, GraphError, ValueError) as exc:
+        code = getattr(exc, "code", None)
+        if code:
+            _err(str(exc), code=code)
+        else:
+            _err(str(exc))
         return 2
 
 

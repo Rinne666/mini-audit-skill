@@ -583,3 +583,108 @@ verify (py3.9)                390 passed, 3 skipped   ← 3 个 skip = live 容�
 verify (py3.13)               393 passed
 sandbox containment           42 passed, 0 skipped    ← 真实容器隔离测试确实执行了
 ```
+
+---
+
+# Search Governance v1 — Phase A 落地（runtime 1.2.0）
+
+Round 1 + Round 2 冻结后开始实现。本次只做 **Phase A**：research state 的地基，以及与既有
+pipeline 的衔接。不包含 Governor、Saturation 硬 gate 与 long-horizon eval。
+
+## 新增 / 扩展
+
+```text
+schemas/audit-objective.schema.json      控制面：审计要证明什么
+schemas/search-ledger.schema.json        研究面：知道什么 / 怀疑什么 / 卡在哪 / 下一步
+schemas/research-delta.schema.json       agent 唯一的写入通道
+schemas/attack-graph.schema.json         能力及其转换
+
+runtime/objective.py                     canonical objective、revision/supersedes、bootstrap
+runtime/research_state.py                search ledger + 17 步 all-or-nothing 事务
+runtime/attack_graph.py                  图数据层（id 分配、一致性、objective 引导）
+runtime/search_lock.py                   SearchGovernanceLock（LOCK_EX / LOCK_SH）
+
+tests/unit/test_search_governance.py     56 条
+```
+
+扩展：`candidate.schema.json` 增加 optional `research`；`finding.schema.json` 增加 optional
+`boundary.capability_refs`；`gates.py` 的 L1 要求两个 canonical artifact、L6 新增
+`every_review_candidate_has_research_metadata`；`cli.py` 增加 `objective {init,replace,show}`
+与 `research {apply,status}`。
+
+## 五个「冻结清单之外」的实现决定
+
+1. **补了 `attack-graph.schema.json` 与 `attack_graph.py`。** 冻结的 delta 契约里有
+   `capabilities_add` / `edges_add`，`research apply` 必然要写 `attack-graph.json`；若该 artifact
+   没有 schema 和一致性检查，就等于把 v1.1.1 刚删掉的「声明了但校验不了」重新引入。图模块只做数据层
+   （id、consistency、悬空引用、objective 引导），path 查询留 Phase B。
+
+2. **结构化 identity 不允许换 key 重声明。** Round 2 的规则是「key 不同 → 不同对象」。对
+   capability / edge 这类闭合词表 identity（`name+principal`、`from,to,relation,via_candidate`），
+   实现上多加一条：新 key 若声明了已被别的 key 持有的 identity，报 `IDENTITY_ALREADY_BOUND` 并整条拒绝。
+   否则同一能力会有两个节点，而「距目标几条边」「路径是否闭合」都会因此静默失真。自由文本
+   identity（fact / assumption / question）不适用——散文相等不是可靠去重依据。
+
+3. **`candidate_updates` 不适用冲突规则，但必须命中真实 candidate。** candidate 的 `research`
+   块没有 identity 字段，因此 scalar 覆盖、list 并集；重新分类（`standalone` → `chain_seed`）
+   正是它的用途。目标是孤儿 patch 则 `UNKNOWN_CANDIDATE` 整条拒绝。
+
+4. **`init` 与 `replace` 对图刻意不对称。** `init` 播种 principal / initial_capabilities / goals；
+   `replace` **不动图**，只写 supersedes 与 ledger 系统 fact——重新播种会让已研究出的 capability
+   悬空。代价是 principal 变更后旧节点仍在，由系统 fact 记录，这是有意选择。
+
+5. **L6 的 research 强制检查读 chamber 产物。** gate 的 source 是
+   `chamber-workspace/*/debate.json`；若改成要求 `candidates/*.json` 存在，会让「没装扫描器」的审计
+   无法通过 L6，而那条路径是仓库明确支持的。canonical candidate store 上的 `research` 由
+   `candidate_updates` 负责。
+
+## 实现中抓到的缺陷
+
+- **search-ledger 的三处 if/then 少了 `required`**，缺字段时凭空通过：`deferred` 不带
+  `reopen_if`、`resolved`/`refuted` 不带 `evidence_refs` 都曾判有效。这正是要防的那类 fail-open，
+  已修并在测试里双向锁定（9 组参数化）。
+- `_next_id` 对 `^(PRIN|CAP|GOAL)-(\d+)$` 取的是 group(1)（前缀）而非数字；且编号未按前缀隔离
+  （goal 会吃掉 capability 的号）。已修。
+- 一个 delta 新增多个 capability 时 id 分配会死循环——规划阶段图未变更，`next_node_id` 每次返回同值。
+  改为按前缀计数。
+- capability 省略 `principal` 时默认取 objective principal，但 identity 比对用的是空串，合法 delta
+  被误判为 `RESEARCH_KEY_CONFLICT`。已修。
+- `edge.via_candidate` 是 identity 字段、不在可变字段表内，创建边时没被带上，直到 schema 校验才报错。已修。
+- `candidate_updates` 最初根本没接进事务；且回写时重新读文件会丢掉内存里的 patch。已修（保留 payload 引用）。
+
+## 验证
+
+```text
+pytest tests/unit                              452 passed（既有 396 + 新增 56）
+scripts/manifest.py --check                    up to date (130 items)
+scripts/check-manifest.py --strict             0 errors / 1 license warning
+scripts/doc_counts.py --check                  consistent
+evals/run.py --self-check                      30 fixtures, 0 errors
+```
+
+手工 CLI 端到端（`/tmp/clitest`）：
+
+```text
+objective init                        → revision 1；图播种 PRIN-001 / CAP-001 / GOAL-001
+objective init（第二次）               → 拒绝（already exists）
+research apply                        → 前向引用解析：edge.from 以 key 声明、落盘为 CAP-001
+objective replace --force --reason    → revision 2 + supersedes(previous_hash) + ledger 系统 fact
+objective replace（内容相同）          → 拒绝：不虚增 revision
+锁被占用 + MINI_AUDIT_SEARCH_LOCK_TIMEOUT=0.4
+                                      → 退出码 3 + holder{pid,agent,operation,acquired_at}
+L1 gate（无 objective/ledger）          → 拒绝并点名两个文件
+L1 gate（三件齐）                       → 通过
+L1 gate（objective 缺 security_invariants）→ 拒绝
+```
+
+## 尚未做
+
+```text
+Phase B  attack graph path / nearest-path 查询
+Phase C  search_governor.py、search next、search saturation
+Phase D  L5/L6/L7/P12/X1-X3/I1-I3 的 research delta 接入
+         L7 reported_capability_paths_closed（7 条子条件）
+Phase E  evals/long_horizon/ 重放评测器 E0 与三个优先指标
+其他     ledger 内 ref 的解析约定：目前是不透明字符串（相对 audit root），agent 写的
+         evidence_refs 更像 repo 相对路径，统一留给 Phase D 的 closure 检查定义
+```

@@ -122,15 +122,35 @@ def test_unknown_semantic_check_fails(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _chamber(cid: str, *, closed: bool = True, with_boundary: bool = True) -> dict:
+def _chamber(cid: str, *, closed: bool = True, with_boundary: bool = True,
+             with_research: bool = True) -> dict:
     cand = {"candidate_id": f"cand-{cid}", "verdict": "VALID"}
     if with_boundary:
         cand["boundary_sentence"] = "an actor who could only read own rows can now read any row"
+    if with_research:
+        # Search Governance v1 (R2-2): the L6 gate, not the candidate schema,
+        # requires an accepted candidate to declare its research value.
+        cand["research"] = {"local_validity": "verified", "role": "chain_seed",
+                            "chain_potential": "high"}
     return {
         "id": cid,
         "debate_status": "closed" if closed else "open",
         "valid_candidates": [cand],
     }
+
+
+def test_l6_rejects_an_accepted_candidate_without_research(tmp_path: Path) -> None:
+    """The schema keeps `research` optional; the chamber gate does not.
+
+    A scanner-normalized 'untriaged' candidate is explicitly exempt, so the two
+    halves of R2-2 are exercised together: permissive schema, strict gate.
+    """
+    _write(tmp_path / "mini-audit/chamber-workspace/c1/debate.json",
+           _chamber("c1", with_research=False))
+    result = GateRunner(workdir=tmp_path).run(gate_for("L6"))
+    assert not result.passed
+    assert any("research metadata" in f.message for f in result.failures), \
+        [f.message for f in result.failures]
 
 
 def test_glob_json_aggregated_and_semantically_validated(tmp_path: Path) -> None:

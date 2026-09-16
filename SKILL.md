@@ -52,12 +52,15 @@ Runtime 负责:
 | `mini-audit/findings.json` | runtime | canonical findings (Spec §10, §11) |
 | `mini-audit/coverage-ledger.json` | runtime | subsystem × boundary × class coverage (Spec §20) |
 | `mini-audit/candidates/<source>-candidates.json` | runtime | normalized SARIF candidate records (Spec §28) |
+| `mini-audit/audit-objective.json` | runtime | what the audit is trying to prove — control plane (Search Governance v1, R2-3) |
+| `mini-audit/search-ledger.json` | runtime | what the search knows / suspects / is blocked on / intends (R2-1) |
+| `mini-audit/attack-graph.json` | runtime | capability nodes and how they convert into one another (R2-6) |
 | `mini-audit/scanner/capabilities.json` | `scripts/detect-tools.sh` | what scanners/sandbox are available (Spec §27) |
 | `mini-audit/sandbox/probe.json` | `scripts/sandbox-check.sh` | sandbox pre-flight (Spec §25) |
 | `mini-audit/agents/<id>/task.json` | runtime | per-lease metadata (Spec §23) |
 | `mini-audit/agents/<id>/result.json` | runtime | per-lease result |
 
-Sub-agents write only to `mini-audit/agents/<id>/scratch/`. Promotion into canonical artifacts happens via runtime CLI after gate validation.
+Sub-agents write only to `mini-audit/agents/<id>/scratch/`. Promotion into canonical artifacts happens via runtime CLI after gate validation. For the research plane that channel is specifically a **research delta** (`research apply`), which applies whole or not at all — an agent never edits `search-ledger.json` or `attack-graph.json` directly.
 
 ### Runtime CLI contract (Spec §7)
 
@@ -74,7 +77,33 @@ mini-audit-runtime source {capture|diff} --repo-root <path>
 mini-audit-runtime sarif normalize <file> --source <scanner>
 mini-audit-runtime diff scope --repo-root <path> --baseline <sha> --target <sha> [--symbol X ...]
 mini-audit-runtime lease run <task> [--phase P] [--timeout N] [--max-attempts N]
+mini-audit-runtime objective init --from-proposal <path> [--agent ID]
+mini-audit-runtime objective replace --from <file> --force --reason "..." [--agent ID]
+mini-audit-runtime objective show
+mini-audit-runtime research apply <delta.json> [--agent ID]
+mini-audit-runtime research status
 ```
+
+### Search Governance (v1, R2-1 … R2-7)
+
+An audit now maintains a research plane beside its verdict plane:
+
+```text
+Audit Objective (control plane)     what this audit is trying to prove
+        │
+Search Ledger  ──── Attack Graph    what is known / suspected / blocked, and how
+        │                           capabilities convert into one another
+        └── research delta ──── one all-or-nothing transaction
+```
+
+The rules that matter operationally:
+
+* **Agents propose, the runtime canonicalises.** An L1 agent writes `agents/<id>/scratch/objective-proposal.json`; `objective init --from-proposal` promotes it. After that the objective is immutable — replacing it needs `--force` **and** `--reason`, bumps `revision`, appends to `supersedes` with the previous content hash, and records a system fact in the ledger. Nothing reopens automatically on a scope change; the change is recorded, not acted on.
+* **A semantic key is an idempotency address; the runtime allocates the id.** Re-submitting the same delta is a no-op. Two objects sharing a key must agree on their identity fields (`claim`; `candidate_id + blocker.type + blocker.claim`; `name + principal`; `from/to/relation/via_candidate`) — otherwise the *whole* delta is refused, never partially applied.
+* **A locally valid bug that cannot be exploited yet is `blocked`, not `rejected`.** A blocked path records its blocker, evidence, reopen conditions and priority. When the assumption it depends on becomes `disproved` the runtime reopens it; when that assumption becomes `supported` the path is closed with `close_reason = blocker_supported`. Neither direction touches the candidate's verdict.
+* **`research` is optional in `candidate.schema.json` but required by the L6 gate** for candidates the chamber accepted, so scanner-normalized `untriaged` records stay valid.
+* **One lock covers the whole research transaction.** `SearchGovernanceLock` (`.search-governance.lock`, `LOCK_EX` for writers, `LOCK_SH` for multi-artifact readers, 5s timeout) is a *write lock*, distinct from the scheduler's `Lease`, which is a concurrency quota. A busy lock exits **3** with a machine-readable holder.
+* **Only `principal`, `capability` and `goal` are node types.** A node type the runtime cannot verify would repeat the "declared but unchecked" failure v1.1.1 removed.
 
 The launcher resolves the runtime package via three strategies: `MINI_AUDIT_RUNTIME_HOME` env → `$MAVIS_SKILLS_DIR/mini-audit` → relative to the script.
 
@@ -246,7 +275,7 @@ Eval corpus under `evals/{positive,negative,ambiguous,}` exercises the permissio
 | eval fixtures | 30 |
 | first-class roles | 7 |
 | phase gates declared | 38 |
-| runtime version | 1.1.1 |
+| runtime version | 1.2.0 |
 | commands: full / partial / stub | 8 / 5 / 4 |
 <!-- END auto-counts -->
 

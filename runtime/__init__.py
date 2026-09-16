@@ -12,6 +12,18 @@ Layer boundaries:
   advances state on its own. Phase completion requires the runtime to validate
   expected artifacts, parse them, schema-validate them, and pass gates.
 
+Inside the deterministic layer, Search Governance v1 adds a second plane:
+
+* control plane — `objective` (what the audit is trying to prove; canonical and
+  immutable once L1 completes).
+* research plane — `research_state` (what the search knows, suspects, is blocked
+  on and intends next), `attack_graph` (capability conversions), and
+  `search_lock` (one cross-process lock over the research artifacts).
+
+Agents still write only into `agents/<id>/scratch/`; a research delta is the
+one channel through which they reach the research plane, and it applies whole
+or not at all.
+
 Public entry points:
 
 * `cli.main` — the `mini-audit-runtime` CLI dispatcher.
@@ -26,6 +38,10 @@ Public entry points:
 * `diff_scope.DiffScope` — changed-symbol caller tracing.
 * `export.Exporter` — JSON / Markdown / SARIF export.
 * `atomic_io` — atomic write primitive (write tmp + fsync + rename).
+* `objective` — audit-objective.json load / validate / lockstep revision.
+* `research_state` — search-ledger.json and the research-delta transaction.
+* `attack_graph` — attack-graph.json data layer (ids, consistency, bootstrap).
+* `search_lock.SearchGovernanceLock` — the Search Governance write lock.
 
 The package is intentionally stdlib-only (Python 3.9+). External JSON-schema
 validation is performed via the `jsonschema` package when available; otherwise
@@ -51,6 +67,10 @@ __all__ = [
     "sarif",
     "diff_scope",
     "export",
+    "objective",
+    "research_state",
+    "attack_graph",
+    "search_lock",
 ]
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"

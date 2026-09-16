@@ -33,6 +33,26 @@
       }
     },
     "debate_status": {"enum": ["open", "closed"]},
-    "promotion_recommendation": {"enum": ["PROMOTE_FOR_VERIFICATION", "REJECT", "DEFER"]}
+    "promotion_recommendation": {"enum": ["PROMOTE_FOR_VERIFICATION", "REJECT", "DEFER"]},
+    "research": {"$ref": "#/$defs/CandidateResearch"}
+  },
+  "$defs": {
+    "CandidateResearch": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "description": "Research value of a candidate — a different axis from its security verdict (Search Governance v1, R2-2). Optional here because a scanner-normalized 'untriaged' candidate should not be forced to carry research metadata and existing fixtures must stay valid; the L6 Review Chamber enforces it semantically for candidates the chamber accepts.",
+      "properties": {
+        "local_validity": {"enum": ["unknown", "verified", "refuted"]},
+        "role": {"enum": ["standalone", "chain_seed", "prerequisite", "unknown"]},
+        "chain_potential": {"enum": ["low", "medium", "high"]},
+        "requires_capabilities": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "grants_capabilities": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "depends_on_assumptions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "breaks_assumptions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "blocked_by": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "reopen_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    }
   }
 }
