@@ -154,6 +154,19 @@ LEDGER_SPECS: dict[str, ObjectSpec] = {
         ("priority", "status", "reason", "assigned_agent", "attempt_refs"),
         ("attempt_refs",),
     ),
+    # Spec §8: ResearchIntent — merged Question + Intent entity. The
+    # ledger owns one canonical row per intent. The fields carry
+    # both the question text and the strategy/priority/status, so
+    # the runtime needs no extra join. The schema's ResearchIntent
+    # $defs (research-delta.schema.json) requires question + strategy
+    # + priority + status; the ObjectSpec's identity tuple matches.
+    "research_intent": ObjectSpec(
+        "research_intent", "research_intents", "RI",
+        ("question", "strategy"),
+        ("priority", "status", "reason", "assigned_agent", "attempt_refs",
+         "evidence_refs", "reopen_if", "related"),
+        ("attempt_refs", "evidence_refs", "reopen_if"),
+    ),
 }
 
 CAPABILITY_MUTABLE = ("status", "evidence_refs", "source_candidates",
@@ -168,11 +181,17 @@ DELTA_OPS: tuple[tuple[str, str, str, bool], ...] = (
     ("facts_add", "fact", "upsert", False),
     ("assumptions_add", "assumption", "upsert", False),
     ("assumptions_update", "assumption", "update", False),
+    # Spec §8: questions_add / intents_add merged into a single
+    # ResearchIntent entity. The legacy fields are still accepted on
+    # the wire (deprecated) but routed to the same ledger kind, so
+    # a fixture written before v2.0 does not need a migration.
     ("questions_add", "open_question", "upsert", False),
     ("questions_resolve", "open_question", "update", False),
+    ("intents_add", "intent", "upsert", False),
+    ("research_intents_add", "research_intent", "upsert", False),
+    ("research_intents_update", "research_intent", "update", False),
     ("blocked_paths_add", "blocked_path", "upsert", False),
     ("blocked_paths_reopen", "blocked_path", "update", False),
-    ("intents_add", "intent", "upsert", False),
     ("capabilities_add", "capability", "upsert", True),
     ("capabilities_update", "capability", "update", True),
     ("edges_add", "edge", "upsert", True),
@@ -283,6 +302,7 @@ def empty_ledger(*, audit_id: Optional[str] = None) -> dict[str, Any]:
         "open_questions": [],
         "blocked_paths": [],
         "intents": [],
+        "research_intents": [],
         # Spec §4: derived facts produced by the runtime. The runtime writes
         # here only; semantic mutations live on the canonical objects.
         "derived_events": [],

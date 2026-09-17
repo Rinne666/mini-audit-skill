@@ -271,14 +271,18 @@
             "status": "verified"
           }
         ],
-        "questions_add": [
+        "research_intents_add": [
           {
             "key": "question:psm-consumer",
             "question": "which mechanism consumes privileged_state_transition beyond the session role?",
+            "strategy": "capability-consumer-search",
             "priority": "P1",
-            "related_capabilities": [
-              "cap:privileged-state-transition"
-            ]
+            "status": "open",
+            "related": {
+              "capabilities": [
+                "cap:privileged-state-transition"
+              ]
+            }
           }
         ]
       }

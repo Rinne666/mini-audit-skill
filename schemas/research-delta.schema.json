@@ -21,7 +21,31 @@
     "capabilities_update": {"type": "array", "items": {"$ref": "#/$defs/CapabilityUpdate"}},
     "edges_add": {"type": "array", "items": {"$ref": "#/$defs/EdgeAdd"}},
     "edges_update": {"type": "array", "items": {"$ref": "#/$defs/EdgeUpdate"}},
-    "intents_add": {"type": "array", "items": {"$ref": "#/$defs/IntentAdd"}},
+    "intents_add": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/IntentAdd"},
+      "description": "DEPRECATED in Skill-First Refactor v2 (spec §8). Replaced by research_intents_add[]."
+    },
+    "questions_add": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/QuestionAdd"},
+      "description": "DEPRECATED in Skill-First Refactor v2 (spec §8). Replaced by research_intents_add[]."
+    },
+    "questions_resolve": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/QuestionResolve"},
+      "description": "DEPRECATED in Skill-First Refactor v2 (spec §8). Use research_intents_update[] with status=resolved/refuted/deferred."
+    },
+    "research_intents_add": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/ResearchIntent"},
+      "description": "Spec §8: merged entity — research question + intent + owner + status. Replaces the dual questions_add / intents_add schema."
+    },
+    "research_intents_update": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/ResearchIntentUpdate"},
+      "description": "Update an existing ResearchIntent by semantic key or canonical id INT-NNN. Status-only updates keep the question text untouched."
+    },
     "candidate_updates": {"type": "array", "items": {"$ref": "#/$defs/CandidateUpdate"}},
     "decisions": {"type": "array", "items": {"$ref": "#/$defs/Decision"}, "description": "Decision-provenance log (spec §5). Every semantic mutation an agent makes on canonical state must be recorded here. The runtime canonicalizes the entry into the ledger's decisions array; subsequent attempts to write the same decision_id are a no-op. A semantic mutation made without a decision_id is rejected by the runtime."}
   },
@@ -225,6 +249,57 @@
         "reason": {"type": "string"},
         "assigned_agent": {"type": "string"},
         "attempt_refs": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "ResearchIntent": {
+      "type": "object",
+      "description": "Spec §8: merged Question + Intent entity. A research question with its chosen strategy, priority, related references, and lifecycle status. One entity, not two — the agent reasons about one concept, the runtime owns one ledger row.",
+      "additionalProperties": false,
+      "required": ["key", "question", "strategy", "priority", "status"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1, "description": "Semantic key — the idempotency contract."},
+        "question": {"type": "string", "minLength": 1, "description": "The research question (was questions_add.question in v1.4)."},
+        "strategy": {"type": "string", "minLength": 1, "description": "The chosen strategy (caller-search / variant-search / capability-consumer-search / prerequisite-search / chain-extension / blocked-path-reopen / verify-frontier-edge / close-reported-capability-path / assumption-verification / capability-revalidation)."},
+        "priority": {"enum": ["P0", "P1", "P2"], "description": "P0/P1/P2 — P0 is the highest."},
+        "reason": {"type": "string", "minLength": 1, "description": "Why this question matters now. Mandatory so the agent reasons about *why*, not just *what*."},
+        "status": {"enum": ["open", "proposed", "assigned", "done", "resolved", "refuted", "deferred", "dropped"], "description": "Lifecycle. open/proposed for newly created, assigned to a worker, done after the worker returns, resolved/refuted/deferred for terminal."},
+        "related": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Free-form references the agent records so a future reader can trace why this question was opened.",
+          "properties": {
+            "blockers": {"$ref": "#/$defs/RefList"},
+            "capabilities": {"$ref": "#/$defs/RefList"},
+            "candidates": {"$ref": "#/$defs/RefList"},
+            "decisions": {"$ref": "#/$defs/RefList"}
+          }
+        },
+        "assigned_agent": {"type": "string"},
+        "attempt_refs": {"$ref": "#/$defs/RefList"},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "reopen_if": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "ResearchIntentUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref"],
+      "properties": {
+        "ref": {"type": "string", "minLength": 1, "description": "Semantic key or canonical id (INT-NNN) of the ResearchIntent."},
+        "status": {"enum": ["open", "proposed", "assigned", "done", "resolved", "refuted", "deferred", "dropped"]},
+        "reason": {"type": "string"},
+        "attempt_refs": {"$ref": "#/$defs/RefList"},
+        "evidence_refs": {"$ref": "#/$defs/RefList"},
+        "related": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "blockers": {"$ref": "#/$defs/RefList"},
+            "capabilities": {"$ref": "#/$defs/RefList"},
+            "candidates": {"$ref": "#/$defs/RefList"},
+            "decisions": {"$ref": "#/$defs/RefList"}
+          }
+        }
       }
     },
     "CandidateUpdate": {

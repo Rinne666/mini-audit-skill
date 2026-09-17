@@ -315,7 +315,11 @@ def test_keys_are_global_not_per_kind(tmp_path: Path) -> None:
     with pytest.raises(DuplicateKeyInDelta):
         rs.apply_delta(root, {"schema_version": 1,
                               "facts_add": [{"key": "same", "claim": "a"}],
-                              "questions_add": [{"key": "same", "question": "q?"}]})
+                              "research_intents_add": [{"key": "same",
+                                                          "question": "q?",
+                                                          "strategy": "capability-consumer-search",
+                                                          "priority": "P2",
+                                                          "status": "open"}]})
 
 
 def test_forward_references_by_key_resolve_to_canonical_ids(tmp_path: Path) -> None:
@@ -944,7 +948,9 @@ def test_persisted_cross_kind_key_reuse_is_refused(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("conflicting", [
-    {"questions_add": [{"key": "cap:sql", "question": "reuse a graph key?"}]},
+    {"research_intents_add": [{"key": "cap:sql", "question": "reuse a graph key?",
+                                  "strategy": "capability-consumer-search",
+                                  "priority": "P2", "status": "open"}]},
     {"facts_add": [{"key": "cap:sql", "claim": "reuse a graph key"}]},
 ])
 def test_a_key_bound_to_a_graph_node_cannot_be_reused(tmp_path: Path,
