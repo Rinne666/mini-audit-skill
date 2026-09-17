@@ -2,7 +2,7 @@
 
 # mini-audit references
 
-4 sub-directories + 1 cross-reference index, total **103 reference files (~1.7MB)** plus the 28 inline Piolium agents already ported.
+4 sub-directories + 1 cross-reference index, total **110 reference files (~1.7MB)** plus the 28 inline Piolium agents already ported.
 
 ## Layout
 
@@ -20,7 +20,7 @@ references/
 ├── vuln-classes/                ← 29 files, ~286KB
 │   └── <class>.md               ← strix vulnerability class reference
 │
-├── methodology/                 ← 11 files, ~262KB
+├── methodology/                 ← 18 files, ~262KB
 │   └── <name>.md                ← cross-class judging + operator methodology + the Search Governance policies
 │
 └── wordlists/                   ← 5 files, ~350KB
@@ -176,17 +176,17 @@ Sub-agents read these via `Bash cat` or `Read` tool. They are NOT prompt templat
 | methodology/ (10) | 7 from `cybermes/knowledge/Claude-BugHunter/skills/{bug-bounty,redteam-mindset,evidence-hygiene,report-writing,triage-validation,recon-scope-triage,web2-recon}/SKILL.md` + 3 original (`permission-delta-judging.md` distilled from admin FP rejections; `search-governance.md` and `research-state.md` from the Search Governance v1 design) |
 | wordlists/ (5) | `cybermes/tools/wordlists/*.txt` |
 
-Piolium has no equivalent for any of the 103 new files (the 4 sub-directories) — these are pure additions that complement the 28 inline Piolium agents already ported.
+Piolium has no equivalent for any of the 110 new files (the 4 sub-directories) — these are pure additions that complement the 28 inline Piolium agents already ported.
 
 Machine-readable provenance (source repo/commit/path, license, modified flag, import date) for every one of the 132 files lives in `MANIFEST.json`; the source declarations and commit map live in `PROVENANCE.json`. Regenerate with `scripts/manifest.py`, verify with `scripts/check-manifest.py --strict`.
 
-## Total: 103 reference files (~1.7MB)
+## Total: 110 reference files (~1.7MB)
 
 The full audit pipeline (`mini-audit`) now has access to:
 - 7 first-class mavis agents (chamber debate + SAST + cold verification + permission-delta re-judgment)
 - 28 inline Piolium role specs
 - 58 per-class hunting methodologies
 - 29 per-class vulnerability references
-- 11 operator methodology references (incl. permission-delta judging + the 3 Search Governance policies: governance, research-state, and the new diff-audit incremental policy)
+- 18 operator methodology references (incl. permission-delta judging + the Search Governance policies + diff-audit + 7 orchestration cookbooks)
 - 5 runtime wordlists
 - 6 supporting skills (`codeql`, `semgrep`, `sarif-parsing`, `vuln-report`, `security-threat-model`, `zeroize-audit`)

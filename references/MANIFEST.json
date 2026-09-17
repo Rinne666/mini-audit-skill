@@ -34,13 +34,13 @@
       "note": "upstream not vendored; confirm license before redistribution"
     }
   },
-  "item_count": 133,
+  "item_count": 140,
   "items": [
     {
       "path": "README.md",
       "kind": "index",
-      "size_bytes": 10971,
-      "sha256": "fbeea737bd3bf17db4660de3137ef7e1022ddd1610f588407cb1393d910d420b",
+      "size_bytes": 10939,
+      "sha256": "7e61ee96a1eab0e3e57093223638438c452b8213140fe0e02af994c302761de3",
       "source_repo": "local",
       "source_commit": "local",
       "source_path": "README.md",
@@ -992,6 +992,90 @@
       "source_repo": "claude-bughunter",
       "source_commit": "UNKNOWN",
       "source_path": "skills/evidence-hygiene/SKILL.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/orchestration/chamber-and-filter.md",
+      "kind": "methodology",
+      "size_bytes": 5566,
+      "sha256": "ecc36aa75ea24f9267c37f3c9e3416816001c5371e3759bd7b99de2339c1f483",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/orchestration/chamber-and-filter.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/orchestration/context-budget.md",
+      "kind": "methodology",
+      "size_bytes": 7812,
+      "sha256": "20ecd66cc488d96243f7ec7b4dc928458f2e435bfbd67d47f2c6013111394fc3",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/orchestration/context-budget.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/orchestration/default-task-prompt.md",
+      "kind": "methodology",
+      "size_bytes": 1660,
+      "sha256": "406c5e62fabfe7bda871ccb1c2ff5ba1eb8d712a2f11c27dbc6ec40c662daf81",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/orchestration/default-task-prompt.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/orchestration/inline-roles.md",
+      "kind": "methodology",
+      "size_bytes": 4560,
+      "sha256": "b66972a1f08a39b5536836f9569a7ec3234d4f5c0bc0c29b744cbfcaf452c045",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/orchestration/inline-roles.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/orchestration/mode-orchestrators.md",
+      "kind": "methodology",
+      "size_bytes": 7592,
+      "sha256": "2114ee102d17f31e802d16058ebd2a24b087baf6729fa01577ada94f5b78545e",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/orchestration/mode-orchestrators.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/orchestration/orchestrator-cookbook.md",
+      "kind": "methodology",
+      "size_bytes": 6767,
+      "sha256": "1c7c0d8b69aacb04b739519696c7a8247e831c16fcd6b66a584b86a81d526b56",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/orchestration/orchestrator-cookbook.md",
+      "license": "UNKNOWN",
+      "modified": false,
+      "imported_at": "2026-09-15"
+    },
+    {
+      "path": "methodology/orchestration/runtime-call-cheatsheet.md",
+      "kind": "methodology",
+      "size_bytes": 7369,
+      "sha256": "79333bd3412fedf92d9a8505f4c8c8845f5344413872e0aee335465623a86a46",
+      "source_repo": "local",
+      "source_commit": "local",
+      "source_path": "methodology/orchestration/runtime-call-cheatsheet.md",
       "license": "UNKNOWN",
       "modified": false,
       "imported_at": "2026-09-15"

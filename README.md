@@ -171,12 +171,12 @@ Sources that are not vendored (`Claude-BugHunter`, `strix`) currently carry an
 <!-- BEGIN auto-counts — generated, do not edit by hand
 | Metric | Value |
 |--------|-------|
-| reference files (4 sub-directories) | 103 |
-| manifest items (incl. inline agents) | 133 |
+| reference files (4 sub-directories) | 110 |
+| manifest items (incl. inline agents) | 140 |
 | inline agent templates | 28 |
 | per-class hunting methodologies | 58 |
 | per-class vulnerability references | 29 |
-| operator methodologies | 11 |
+| operator methodologies | 18 |
 | runtime wordlists | 5 |
 | eval fixtures (positive / negative / ambiguous) | 30 |
 | long-horizon replay scenarios | 1 |
