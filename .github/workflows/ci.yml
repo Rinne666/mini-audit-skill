@@ -71,16 +71,18 @@ jobs:
         # runtime's handling of blocked-path reopen with diff provenance.
         run: python evals/incremental_run.py
 
-      - name: Ablation (diff_evidence_ref / auto_reopen)
-        # Two surgical ablations of the incremental fixture:
-        #   - strip diff_evidence_ref      → only affected_assumption_detection drops
-        #   - drop assumptions_update      → only blocked_path_reopen_rate (and
-        #                                    transitively assumption_detection) drop
-        # Fails CI if either ablation is no longer surgical (i.e. removing
-        # one component moves more than the metric whose contract depends on it).
-        run: |
-          python evals/ablation/run_ablation.py --ablate diff_evidence_ref
-          python evals/ablation/run_ablation.py --ablate auto_reopen
+      - name: Ablation (diff_evidence_ref)
+        # Surgical ablation of the diff-mode incremental fixture: stripping
+        # diff_evidence_ref from the delta must move *only*
+        # affected_assumption_detection (the metric gated on the field).
+        # Other three metrics must stay at baseline. A non-surgical ablation
+        # is a CI failure.
+        #
+        # (The historical auto_reopen ablation was removed in Skill-First
+        # Refactor v2 spec §4. Runtime-inertness is now verified by
+        # tests/unit/test_ablation.py::test_runtime_is_inert_*. Here we
+        # only run the diff_evidence_ref ablation.)
+        run: python evals/ablation/run_ablation.py --ablate diff_evidence_ref
 
       - name: Shell scripts parse
         run: |
