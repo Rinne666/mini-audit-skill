@@ -46,6 +46,12 @@ jobs:
         # rather than hidden behind a green tick.
         run: python -m pytest tests/unit -q -rs
 
+      - name: Architecture invariants (spec §11)
+        # Pins the runtime-is-inert + decision-provenance contracts. Any new
+        # control verb in runtime/ that the spec forbids, or any schema edit
+        # that breaks decision provenance, fails this step before merge.
+        run: python -m pytest tests/invariants -q -rs
+
       - name: Manifest integrity (references/MANIFEST.json ↔ disk)
         run: |
           python scripts/manifest.py --check
