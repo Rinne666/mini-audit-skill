@@ -71,6 +71,17 @@ jobs:
         # runtime's handling of blocked-path reopen with diff provenance.
         run: python evals/incremental_run.py
 
+      - name: Ablation (diff_evidence_ref / auto_reopen)
+        # Two surgical ablations of the incremental fixture:
+        #   - strip diff_evidence_ref      → only affected_assumption_detection drops
+        #   - drop assumptions_update      → only blocked_path_reopen_rate (and
+        #                                    transitively assumption_detection) drop
+        # Fails CI if either ablation is no longer surgical (i.e. removing
+        # one component moves more than the metric whose contract depends on it).
+        run: |
+          python evals/ablation/run_ablation.py --ablate diff_evidence_ref
+          python evals/ablation/run_ablation.py --ablate auto_reopen
+
       - name: Shell scripts parse
         run: |
           status=0
