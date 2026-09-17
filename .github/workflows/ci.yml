@@ -77,6 +77,18 @@ jobs:
         # runtime's handling of blocked-path reopen with diff provenance.
         run: python evals/incremental_run.py
 
+      - name: Architectural ablation (spec §14, structural mode)
+        # Replays the long-horizon chain-001 fixture once per registered
+        # architectural ablation (no attack graph / no search ledger /
+        # no blocked-path retention / etc.) and reports the per-metric
+        # delta against the unmodified baseline. The structural mode is a
+        # proxy for the full Model E2E (spec §14); the harness extension is
+        # tracked in the v2.0 plan.
+        run: |
+          python evals/architectural_ablation/run.py --ablate A
+          python evals/architectural_ablation/run.py --ablate B
+          python evals/architectural_ablation/run.py --ablate F
+
       - name: Ablation (diff_evidence_ref)
         # Surgical ablation of the diff-mode incremental fixture: stripping
         # diff_evidence_ref from the delta must move *only*
