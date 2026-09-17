@@ -22,7 +22,8 @@
     "edges_add": {"type": "array", "items": {"$ref": "#/$defs/EdgeAdd"}},
     "edges_update": {"type": "array", "items": {"$ref": "#/$defs/EdgeUpdate"}},
     "intents_add": {"type": "array", "items": {"$ref": "#/$defs/IntentAdd"}},
-    "candidate_updates": {"type": "array", "items": {"$ref": "#/$defs/CandidateUpdate"}}
+    "candidate_updates": {"type": "array", "items": {"$ref": "#/$defs/CandidateUpdate"}},
+    "decisions": {"type": "array", "items": {"$ref": "#/$defs/Decision"}, "description": "Decision-provenance log (spec §5). Every semantic mutation an agent makes on canonical state must be recorded here. The runtime canonicalizes the entry into the ledger's decisions array; subsequent attempts to write the same decision_id are a no-op. A semantic mutation made without a decision_id is rejected by the runtime."}
   },
   "$defs": {
     "RefList": {
@@ -256,6 +257,24 @@
         "breaks_assumptions": {"$ref": "#/$defs/RefList"},
         "blocked_by": {"$ref": "#/$defs/RefList"},
         "reopen_conditions": {"$ref": "#/$defs/RefList"}
+      }
+    },
+    "Decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Decision provenance (spec §5). Every entry MUST carry a non-empty decision_id and decided_by; the runtime refuses to canonicalize entries without them. The decision_id is the only top-level field the agent mints and the runtime canonicalizes — runtime-generated fields go under the derived.* / system.* / validation.* namespaces and must not appear here.",
+      "required": ["decision_id", "decided_by", "semantic_mutation", "phase"],
+      "properties": {
+        "decision_id": {"type": "string", "pattern": "^DEC-[0-9]{4,}$", "minLength": 6, "description": "Globally-unique, monotonic id allocated by the agent (e.g. DEC-0042). Re-applying the same decision_id is a no-op so retries are safe."},
+        "decided_by": {"type": "string", "minLength": 1, "description": "Who took the decision (agent id or harness name). The runtime refuses entries where this is empty or 'runtime'."},
+        "phase": {"type": "string", "minLength": 1, "description": "The audit phase the decision was made under (L5, V3, etc.). Recorded so an audit report can correlate a decision with the phase that produced it."},
+        "semantic_mutation": {
+          "enum": ["phase_complete_request", "candidate_promote", "candidate_reject", "finding_confirm", "finding_defer", "blocked_path_reopen", "assumption_judge", "coverage_defer", "research_intent_create", "audit_stop"],
+          "description": "The kind of canonical mutation this decision authorizes. The runtime checks the entry against the rest of the delta and refuses mismatches (e.g. a decision of kind 'blocked_path_reopen' with no matching blocked_paths_reopen entry is rejected)."
+        },
+        "reason": {"type": "string", "minLength": 1, "description": "Free-text rationale. Mandatory — a decision without a reason is refused (spec §5)."},
+        "evidence_refs": {"$ref": "#/$defs/RefList", "description": "Line-grounded evidence supporting the decision. Empty list is allowed only when semantic_mutation is 'audit_stop'."},
+        "subject_ref": {"type": "string", "minLength": 1, "description": "The semantic key or canonical id of the object the decision acts on (e.g. 'blocked:query-needs-scalar', 'cand-031'). Not strictly required for every kind but strongly recommended."}
       }
     }
   }

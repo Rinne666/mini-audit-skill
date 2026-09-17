@@ -286,6 +286,9 @@ def empty_ledger(*, audit_id: Optional[str] = None) -> dict[str, Any]:
         # Spec §4: derived facts produced by the runtime. The runtime writes
         # here only; semantic mutations live on the canonical objects.
         "derived_events": [],
+        # Spec §5: append-only decision provenance log. The runtime canonicalizes
+        # entries from delta.decisions into this array; agents never write here.
+        "decisions": [],
     }
     if audit_id:
         ledger["audit_id"] = audit_id
@@ -776,6 +779,12 @@ def _apply_locked(audit_root: Path, delta: Mapping[str, Any], *,
             raise DeltaSchemaError(f"candidate_updates[{index}] must be an object")
         patch_candidate_research(txn, str(update.get("candidate_id")), update.get("research") or {})
 
+    # Decision provenance (spec §5): validate + canonicalize delta.decisions.
+    # The runtime is strict here because the decision log is the audit trail for
+    # *why* the canonical state changed — a malformed entry silently dropped
+    # would defeat the whole point of the field.
+    _canonicalize_decisions(txn, delta.get("decisions") or [])
+
     # Step 13: side effects — assumption transitions move blocked paths.
     _apply_assumption_side_effects(txn, previous_status)
     _recompute_depended_on_by(txn)
@@ -791,6 +800,11 @@ def _apply_locked(audit_root: Path, delta: Mapping[str, Any], *,
     generation = max(generation_of(txn.ledger), generation_of(txn.graph)) + 1
     txn.ledger["generation"] = generation
     txn.graph["generation"] = generation
+    # Stamp generation onto every decision so a later audit can correlate the
+    # entry with the exact transaction that committed it (spec §5).
+    for entry in txn.ledger.get("decisions", []):
+        if entry.get("delta_generation") is None:
+            entry["delta_generation"] = generation
     write_json_atomic(ledger_path(audit_root), {**txn.ledger, "updated_at": utc_now()})
     graph_mod.save_graph(audit_root, txn.graph)
     for path, payload in txn.touched_candidate_payloads.items():
@@ -1144,6 +1158,116 @@ def _apply_assumption_side_effects(txn: _Transaction,
         # canonical objects. Sync the txn-level list back into the ledger dict
         # before persistence.
         txn.ledger["derived_events"] = list(txn.derived_events)
+
+
+#: Decisions the runtime refuses to canonicalize. "runtime" is the obvious one:
+#: the whole point of the field is to surface who *originated* the change.
+DECISION_DECIDED_BY_RESERVED = frozenset({"runtime", "system"})
+
+#: decision.kind values that require a non-empty evidence_refs list. Other
+#: kinds allow an empty list (audit_stop is the main case — "no investigation
+#: was performed" is itself a valid reason to stop).
+_DECISION_REQUIRES_EVIDENCE = frozenset({
+    "candidate_promote", "candidate_reject", "finding_confirm",
+    "finding_defer", "blocked_path_reopen", "assumption_judge",
+})
+
+
+def _canonicalize_decisions(txn: _Transaction,
+                            decisions: Sequence[Mapping[str, Any]]) -> None:
+    """Validate and append decisions to ``txn.ledger["decisions"]``.
+
+    Spec §5 contract:
+
+    * Every entry must carry a non-empty ``decision_id`` and ``decided_by``.
+      The runtime refuses to canonicalize entries without them.
+    * ``decided_by`` must not be ``"runtime"`` or ``"system"`` — the field
+      exists to record who *originated* a semantic change.
+    * ``evidence_refs`` is required (non-empty) for mutations that rest on
+      evidence, optional otherwise. ``audit_stop`` is the documented case
+      where empty evidence is allowed.
+    * ``decision_id`` is the idempotency address: re-applying the same id is
+      a no-op so retries are safe.
+    * The runtime stamps ``decided_at`` and ``delta_generation`` so a later
+      audit can correlate the entry with the transaction that committed it.
+    """
+    if not decisions:
+        return
+    ledger = txn.ledger
+    ledger.setdefault("decisions", [])
+    seen_ids = {d.get("decision_id") for d in ledger.get("decisions", [])}
+    for index, entry in enumerate(decisions):
+        if not isinstance(entry, dict):
+            raise DeltaSchemaError(f"decisions[{index}] must be an object")
+
+        decision_id = str(entry.get("decision_id", "")).strip()
+        if not decision_id:
+            raise DeltaSchemaError(
+                f"decisions[{index}] requires a non-empty decision_id "
+                "(spec §5); minting the id is the agent's responsibility"
+            )
+        if not re.match(r"^DEC-[0-9]{4,}$", decision_id):
+            raise DeltaSchemaError(
+                f"decisions[{index}] decision_id {decision_id!r} does not match "
+                "the DEC-NNNN pattern"
+            )
+
+        decided_by = str(entry.get("decided_by", "")).strip()
+        if not decided_by:
+            raise DeltaSchemaError(
+                f"decisions[{index}] {decision_id!r} requires a non-empty "
+                "decided_by; an entry without a decision-taker cannot be "
+                "canonically attributed"
+            )
+        if decided_by in DECISION_DECIDED_BY_RESERVED:
+            raise DeltaSchemaError(
+                f"decisions[{index}] {decision_id!r} has decided_by="
+                f"{decided_by!r}, which is reserved; the runtime does not "
+                "originate decisions (spec §5)"
+            )
+
+        semantic_mutation = str(entry.get("semantic_mutation", "")).strip()
+        if not semantic_mutation:
+            raise DeltaSchemaError(
+                f"decisions[{index}] {decision_id!r} requires a non-empty "
+                "semantic_mutation"
+            )
+
+        if not str(entry.get("reason", "")).strip():
+            raise DeltaSchemaError(
+                f"decisions[{index}] {decision_id!r} requires a non-empty "
+                "reason; a decision without a reason is refused"
+            )
+
+        if semantic_mutation in _DECISION_REQUIRES_EVIDENCE:
+            refs = entry.get("evidence_refs") or []
+            if not refs:
+                raise DeltaSchemaError(
+                    f"decisions[{index}] {decision_id!r} ({semantic_mutation}) "
+                    "requires at least one evidence_ref"
+                )
+
+        # Idempotency: re-applying the same decision_id is a no-op.
+        if decision_id in seen_ids:
+            txn.warnings.append(
+                f"decision {decision_id!r} already in ledger; "
+                "skipping duplicate canonicalization"
+            )
+            continue
+
+        now = utc_now()
+        canonical = {
+            "decision_id": decision_id,
+            "decided_by": decided_by,
+            "phase": str(entry.get("phase", "")).strip(),
+            "semantic_mutation": semantic_mutation,
+            "reason": str(entry.get("reason", "")).strip(),
+            "evidence_refs": list(entry.get("evidence_refs") or []),
+            "subject_ref": str(entry.get("subject_ref") or ""),
+            "decided_at": now,
+        }
+        ledger["decisions"].append(canonical)
+        seen_ids.add(decision_id)
 
 
 def _recompute_depended_on_by(txn: _Transaction) -> None:
