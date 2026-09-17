@@ -189,6 +189,14 @@
             ]
           }
         ],
+        "blocked_paths_reopen": [
+          {
+            "ref": "blocked:query-needs-scalar",
+            "evidence_refs": [
+              "A.py:27"
+            ]
+          }
+        ],
         "capabilities_update": [
           {
             "ref": "cap:control-scalar-parameter",

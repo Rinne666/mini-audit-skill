@@ -283,6 +283,9 @@ def empty_ledger(*, audit_id: Optional[str] = None) -> dict[str, Any]:
         "open_questions": [],
         "blocked_paths": [],
         "intents": [],
+        # Spec §4: derived facts produced by the runtime. The runtime writes
+        # here only; semantic mutations live on the canonical objects.
+        "derived_events": [],
     }
     if audit_id:
         ledger["audit_id"] = audit_id
@@ -607,6 +610,10 @@ class _Transaction:
         self.reopened: list[str] = []
         self.closed: list[dict[str, str]] = []
         self.assumption_transitions: list[dict[str, str]] = []
+        # Spec §4: mechanically-derived facts the runtime reports for the model
+        # to read. Replaces the v1–v1.4 auto-rewriting side effect on
+        # blocked_path.status / close_reason.
+        self.derived_events: list[dict[str, Any]] = []
 
 
 def apply_delta(
@@ -797,6 +804,10 @@ def _apply_locked(audit_root: Path, delta: Mapping[str, Any], *,
         "created": {k: sorted(v) for k, v in txn.created.items()},
         "merged": {k: sorted(v) for k, v in txn.merged.items()},
         "key_to_id": dict(sorted(txn.key_to_id.items())),
+        # Spec §4: derived events replace the v1–v1.4 auto-rewriting side
+        # effect on blocked_path.status / close_reason. The model reads these
+        # and decides what to do (reopen / defer / ignore / escalate).
+        "derived_events": list(txn.derived_events),
         "reopened_blocked_paths": sorted(txn.reopened),
         "closed_blocked_paths": txn.closed,
         "assumption_transitions": txn.assumption_transitions,
@@ -1087,14 +1098,18 @@ def _create_object(txn: _Transaction, kind: str, is_graph: bool,
 
 def _apply_assumption_side_effects(txn: _Transaction,
                                   previous_status: Mapping[Any, Any]) -> None:
-    """Move blocked paths when an assumption they depend on changes state.
+    """Record derived events when an assumption changes state.
 
-    ``disproved`` means the claim a blocker relied on is false, so the path
-    reopens. ``supported`` means the blocker is strengthened, so the path
-    closes with ``close_reason = blocker_supported``. Closing a path never
-    rewrites the candidate's own status: "this route is obstructed" is not
-    "this bug is disproved".
+    Spec §4 (Skill-First Refactor v2): the runtime may detect that a blocker
+    has become reopenable (its assumption flipped to ``disproved``) and emit a
+    derived event so the model knows. It must NOT mutate ``blocked_path.status``
+    or ``close_reason`` itself — those are research decisions the model
+    owns. Closing a path never rewrites the candidate's own status: "this
+    route is obstructed" is not "this bug is disproved" — same principle
+    holds; the runtime merely reports the fact that an obstruction is now
+    gone, the model decides what to do.
     """
+    now = utc_now()
     for assumption in iter_objects(txn.ledger, "assumption"):
         new_status = assumption.get("status")
         old_status = previous_status.get(assumption.get("id"))
@@ -1107,18 +1122,28 @@ def _apply_assumption_side_effects(txn: _Transaction,
         })
         if new_status not in ("disproved", "supported"):
             continue
+        # Spec §4: detect mechanical fact, emit derived event, leave the
+        # status mutation to the model. Reopen / close are decisions.
+        event_name = ("blocked_path_reopenable"
+                      if new_status == "disproved"
+                      else "blocked_path_close_supported")
         for path in iter_objects(txn.ledger, "blocked_path"):
             if (path.get("blocker") or {}).get("assumption_ref") != assumption.get("id"):
                 continue
-            if new_status == "disproved" and path.get("status") == "blocked":
-                path["status"] = "reopened"
-                path["updated_at"] = utc_now()
-                txn.reopened.append(str(path.get("id")))
-            elif new_status == "supported" and path.get("status") in ("blocked", "reopened"):
-                path["status"] = "closed"
-                path["close_reason"] = "blocker_supported"
-                path["updated_at"] = utc_now()
-                txn.closed.append({"id": str(path.get("id")), "reason": "blocker_supported"})
+            derived = {
+                "event": event_name,
+                "subject": str(path.get("id")),
+                "reason": f"assumption {assumption.get('id')} transitioned "
+                          f"{old_status or ''} -> {new_status}",
+                "evidence_refs": list(path.get("evidence_refs") or []),
+                "at": now,
+                "delta_ref": str(txn.delta.get("agent_id") or ""),
+            }
+            txn.derived_events.append(derived)
+        # Spec §4: derived events live on the ledger, not on the agent-visible
+        # canonical objects. Sync the txn-level list back into the ledger dict
+        # before persistence.
+        txn.ledger["derived_events"] = list(txn.derived_events)
 
 
 def _recompute_depended_on_by(txn: _Transaction) -> None:

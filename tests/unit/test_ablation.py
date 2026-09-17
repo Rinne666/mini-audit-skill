@@ -74,52 +74,107 @@ def test_ablate_diff_evidence_ref_field_is_truly_absent(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Ablation 2 — auto_reopen (assumption → blocked-path side effect)
+# Skill-First Refactor v2 (spec §10): runtime-inertness guard
 # ---------------------------------------------------------------------------
 
 
-def test_ablate_auto_reopen_drops_only_reopen_assumption(tmp_path: Path) -> None:
-    """Removing the assumption→blocked-path side effect must drop
-    ``blocked_path_reopen_rate`` to 0 (and, transitively,
-    ``affected_assumption_detection`` — the metric requires the assumption
-    to actually be marked disproved, which the side-effect bypass disables).
-    The two reuse/completion metrics stay at baseline."""
-    proc = _run("--ablate", "auto_reopen", "--scenario", "INCR-001",
-                "--keep", str(tmp_path), "--json", workdir=tmp_path)
-    report = _report(proc)
-    delta = report["delta"]
-    assert delta["blocked_path_reopen_rate"] == pytest.approx(-1.0)
-    assert delta["affected_assumption_detection"] == pytest.approx(-1.0)
-    for name in ("old_candidate_reuse_rate", "incremental_chain_completion"):
-        assert delta[name] == pytest.approx(0.0), (
-            f"ablation was not surgical: {name} moved by {delta[name]}"
-        )
+def test_runtime_is_inert_when_agent_does_not_decide_reopen(tmp_path: Path) -> None:
+    """Spec §10: even when all artifacts exist, all gates would pass, and an
+    assumption's blocker has flipped to ``disproved``, the runtime must NOT
+    mutate ``blocked_path.status`` until the model submits an explicit
+    ``blocked_paths_reopen`` decision. Replay a delta that disproves the
+    blocker but omits the reopen entry; the blocked path must stay
+    ``blocked`` and a ``derived_event`` must be appended to the ledger."""
+    from runtime import objective as objective_mod
+    from runtime import research_state as rs
 
+    proposal = {
+        "principal": "unauthenticated_remote_user",
+        "initial_capabilities": ["send_http_request"],
+        "target_capabilities": ["arbitrary_code_execution"],
+        "security_invariants": ["anonymous users cannot obtain privileged execution capability"],
+    }
+    audit_root = tmp_path / "mini-audit"
+    objective_mod.init_and_bootstrap(audit_root, proposal, agent="agent-L1")
+    # Pre-populate: a blocked path whose blocker rests on an assumption.
+    rs.apply_delta(audit_root, {
+        "schema_version": 1,
+        "agent_id": "agent-L5",
+        "blocked_paths_add": [{
+            "key": "blocked:query-needs-scalar",
+            "candidate_id": "cand-b-query",
+            "blocker": {"type": "input_validation",
+                        "claim": "all callers coerce",
+                        "assumption_ref": "assumption:callers-pass-int-list"},
+            "priority": "high",
+            "evidence_refs": ["A.py:21"],
+        }],
+        "assumptions_add": [{
+            "key": "assumption:callers-pass-int-list",
+            "claim": "every caller passes a list of integers",
+        }],
+    }, agent="agent-L5")
 
-def test_ablate_auto_reopen_keeps_assumption_unverified(tmp_path: Path) -> None:
-    """The auto_reopen ablation rewrites the delta so the assumption status
-    update is dropped. The ledger must therefore carry the assumption in its
-    pre-ablation ``unverified`` state and the blocked path in ``blocked``."""
-    proc = _run("--ablate", "auto_reopen", "--scenario", "INCR-001",
-                "--keep", str(tmp_path), workdir=tmp_path)
-    assert proc.returncode == 0, proc.stderr
-    ablated_root = tmp_path / "INCR-001" / "abl_auto_reopen" / "mini-audit"
-    ledger = json.loads((ablated_root / "search-ledger.json").read_text())
-    assumptions = ledger.get("assumptions") or []
-    matching = [a for a in assumptions
-                if a.get("key") == "assumption:callers-pass-int-list"]
-    assert matching, "fixture's blocker assumption is missing — fixture drifted?"
-    assert matching[0]["status"] == "unverified", (
-        f"expected assumption to stay unverified after ablation, "
-        f"got {matching[0]['status']}"
+    # Now: agent disproves the assumption but submits NO reopen decision.
+    report = rs.apply_delta(audit_root, {
+        "schema_version": 1,
+        "agent_id": "agent-L5b",
+        "assumptions_update": [{
+            "ref": "assumption:callers-pass-int-list",
+            "status": "disproved",
+            "evidence_refs": ["A.py:27"],
+        }],
+    }, agent="agent-L5b")
+
+    # Spec §4: runtime reports derived event(s); does not rewrite BP status.
+    assert report["derived_events"], (
+        "runtime must report a 'blocked_path_reopenable' derived event when an "
+        "assumption flips; got none"
     )
-    bps = ledger.get("blocked_paths") or []
-    matching_bp = [bp for bp in bps
-                   if bp.get("key") == "blocked:query-needs-scalar"]
-    assert matching_bp, "fixture's blocked path is missing — fixture drifted?"
-    assert matching_bp[0]["status"] == "blocked", (
-        f"expected blocked path to stay blocked after ablation, "
-        f"got {matching_bp[0]['status']}"
+    assert any(ev["event"] == "blocked_path_reopenable"
+               for ev in report["derived_events"]), (
+        f"expected a 'blocked_path_reopenable' derived event, got "
+        f"{[ev['event'] for ev in report['derived_events']]}"
+    )
+    assert report["reopened_blocked_paths"] == [], (
+        "runtime must NOT auto-rewrite blocked_path.status in spec §4; "
+        "the model owns that decision"
+    )
+
+    # On disk: the blocked path stays ``blocked``; only a derived_events entry
+    # was appended.
+    ledger = rs.load_ledger(audit_root)
+    assert ledger is not None
+    bps = [bp for bp in ledger["blocked_paths"]
+           if bp["key"] == "blocked:query-needs-scalar"]
+    assert bps and bps[0]["status"] == "blocked", (
+        f"blocked_path must stay 'blocked' without an explicit reopen; "
+        f"got {bps[0]['status']}"
+    )
+    events = ledger.get("derived_events") or []
+    assert events, "ledger must carry the derived event for the model to read"
+    assert events[-1]["event"] == "blocked_path_reopenable"
+    assert events[-1]["subject"] == bps[0]["id"]
+
+
+def test_runtime_inertness_violation_guard_against_auto_status_write() -> None:
+    """Spec §2 + §4: the runtime must not export any auto-rewriting method on
+    blocked_path or assumption objects. We assert that ``apply_delta`` is the
+    only mutating surface and that a direct caller cannot make a blocked path
+    reopen without going through an explicit ``blocked_paths_reopen`` entry.
+    """
+    import inspect
+
+    from runtime import research_state as rs
+
+    sig = inspect.signature(rs.apply_delta)
+    # apply_delta must not accept a 'force_reopen' or similar bypass flag.
+    forbidden_params = {"force_reopen", "auto_advance", "skip_side_effect_check"}
+    actual = set(sig.parameters)
+    leaked = forbidden_params & actual
+    assert not leaked, (
+        f"apply_delta exposes forbidden bypass params: {leaked} "
+        "(spec §2: runtime must not auto-advance or auto-reopen)"
     )
 
 

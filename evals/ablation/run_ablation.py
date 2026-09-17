@@ -22,14 +22,14 @@ Available ablations
   and well-formed). The other three metrics must remain unchanged; if they
   move, the ablation is no longer surgical.
 
-* ``auto_reopen`` — comment out the assumption→blocked-path side effect by
-  rewriting every ``assumptions_update`` step so the assumption still flips
-  to ``disproved`` (so the metric's assumptions are still met) but the
-  blocked path is left as ``blocked``. Expected effect: ``blocked_path_
-  reopen_rate`` drops to 0. Implemented by appending a follow-up
-  ``blocked_paths_update`` step that pins the affected path's status back
-  to ``blocked`` — equivalent to "agent forgot to write the reopen entry",
-  which is exactly what the runtime side effect exists to fix.
+Note
+----
+The historical ``auto_reopen`` ablation has been removed as part of the
+Skill-First Refactor v2 (spec §4). The runtime no longer auto-rewrites
+``blocked_path.status`` from an ``assumptions_update`` side effect; the
+model owns that decision via an explicit ``blocked_paths_reopen`` entry.
+The fact that the runtime is now inert on this axis is verified by
+``tests/unit/test_runtime_is_inert.py``, not by ablation.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ if str(SKILL_ROOT) not in sys.path:
 
 from evals import incremental_run as ir  # noqa: E402
 
-ABLATIONS = ("diff_evidence_ref", "auto_reopen")
+ABLATIONS = ("diff_evidence_ref",)
 METRIC_NAMES = ir.METRIC_NAMES
 SCENARIO_ID = "INCR-001"
 
@@ -80,107 +80,20 @@ def _strip_diff_evidence_ref(scenario: Mapping[str, Any]) -> dict[str, Any]:
     return rewritten
 
 
-def _disable_auto_reopen(scenario: Mapping[str, Any]) -> dict[str, Any]:
-    """Suppress the runtime's ``assumptions_update → reopen`` side effect by
-    pinning the dependent blocked path's status back to ``blocked`` after the
-    assumption flip.
-
-    This is the model of "the runtime side effect didn't happen" — the
-    assumption still goes ``disproved`` (so the metric's pre-condition is met),
-    but the blocked path is left untouched, the way it would be if a legacy
-    runtime pre-dated the side effect.
-    """
-    rewritten = copy.deepcopy(dict(scenario))
-    # Find the blocked path keys the assumption rest depends on.
-    blocked_path_keys: list[str] = []
-    for step in rewritten.get("steps") or []:
-        for bp in (step.get("delta") or {}).get("blocked_paths_add") or []:
-            if isinstance(bp, dict) and bp.get("key"):
-                blocked_path_keys.append(str(bp["key"]))
-
-    if blocked_path_keys:
-        # Append a final step that pins each path back to ``blocked``.
-        rewritten.setdefault("steps", []).append({
-            "note": ("ablation=auto_reopen: explicitly pin every blocked path "
-                     "back to 'blocked' to suppress the assumption→reopen side effect"),
-            "delta": {
-                "schema_version": 1,
-                "agent_id": "ablation-pin-back",
-                "blocked_paths_reopen": [],
-            },
-        })
-        # And rewrite the assumption-status update so it lands on the ledger
-        # but the side effect is bypassed by deleting the offending step
-        # entirely: without the ``assumptions_update``, no path is reopened
-        # automatically, and the assumption does not get its ``disproved``
-        # status — which would also kill the metric. Instead, we *do* call
-        # the assumption update, but we *also* insert a status-resetting
-        # follow-up that re-flips the path. Because the runtime writes only
-        # after the whole transaction, the path ends up as ``blocked``.
-        rewritten["steps"][-1]["delta"]["blocked_paths_reopen"] = [
-            # ``blocked_paths_reopen`` always sets status='reopened'. We use
-            # a custom update below to flip it back via a fresh
-            # ``blocked_paths_add``-shaped entry instead.
-            {"ref": key, "status": "blocked"}  # see _status_pin_back below
-            for key in blocked_path_keys
-        ]
-        # The schema does not allow a ``status`` field on
-        # ``blocked_paths_reopen``; drop it from the patch and rely on the
-        # _status_pin_back rewrite instead.
-        rewritten["steps"][-1]["delta"]["blocked_paths_reopen"] = [
-            {"ref": key} for key in blocked_path_keys
-        ]
-    return rewritten
-
-
-# A second pass: for the auto_reopen ablation we need a *post*-reopen pin.
-# The schema lets us re-open then close, but the runtime API doesn't expose
-# close. So we use a different approach: rewrite the scenario so the
-# assumption status change *never happens*. The metric counts the
-# assumption as "disproved" iff the runtime actually recorded it as such —
-# which is the contract under test. Removing the update drops the metric
-# to 0, which is exactly what an ablation of the side effect should show.
-
-
+# Removed in Skill-First Refactor v2 (spec §4): the auto-reopen side effect
+# no longer exists in the runtime, so this ablation has no surface to act on.
+# The new test_runtime_is_inert_without_agent_decision test (in
+# tests/unit/) verifies the runtime does not auto-rewrite semantic state.
 def _disable_auto_reopen_v2(scenario: Mapping[str, Any]) -> dict[str, Any]:
-    """Rewrite v2: drop the ``assumptions_update`` that flips the dependency,
-    so the side effect cannot fire.
-
-    Side effect: the assumption is left at its original ``unverified`` status
-    and the blocked path stays ``blocked``. Both happen *because* the
-    runtime's side effect had no input — the agent forgot to write the update,
-    which is precisely the failure mode the side effect is supposed to make
-    impossible from inside the transaction.
-    """
-    rewritten = copy.deepcopy(dict(scenario))
-    target_ref = None
-    # Find the assumption key the blocked path depends on.
-    for step in rewritten.get("steps") or []:
-        for bp in (step.get("delta") or {}).get("blocked_paths_add") or []:
-            ref = (bp.get("blocker") or {}).get("assumption_ref")
-            if ref:
-                target_ref = ref
-                break
-        if target_ref:
-            break
-
-    if not target_ref:
-        raise RuntimeError("auto_reopen ablation: no blocker.assumption_ref found")
-
-    for step in rewritten["steps"]:
-        updates = (step.get("delta") or {}).get("assumptions_update")
-        if not isinstance(updates, list):
-            continue
-        step["delta"]["assumptions_update"] = [
-            u for u in updates
-            if not (isinstance(u, dict) and u.get("ref") == target_ref)
-        ]
-    return rewritten
+    raise NotImplementedError(
+        "auto_reopen ablation removed in Skill-First Refactor v2 (spec §4). "
+        "See tests/unit/test_runtime_is_inert.py for the runtime-inertness "
+        "guard that replaced it."
+    )
 
 
 _REWRITERS = {
     "diff_evidence_ref": _strip_diff_evidence_ref,
-    "auto_reopen": _disable_auto_reopen_v2,
 }
 
 

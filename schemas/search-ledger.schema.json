@@ -183,6 +183,27 @@
         "updated_at": {"type": "string"}
       }
     },
+    "derived_events": {
+      "type": "array",
+      "description": "Mechanically-derived facts produced by the runtime (spec §4: 'Runtime may organize facts for the model, but must not evaluate which fact deserves action'). Examples: blocked_path_reopenable, goal_reachable_from_capability, prerequisite_satisfied. The model reads these and decides what to do; the runtime never acts on them.",
+      "items": {
+        "type": "object",
+        "required": ["event", "at"],
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable event name (e.g. 'blocked_path_reopenable', 'goal_reachable', 'coverage_closed')."
+          },
+          "subject": {"type": "string", "description": "Canonical id of the object the event is about (e.g. 'BP-003', 'CAP-007')."},
+          "reason": {"type": "string", "description": "Free-form description of why the runtime derived this event."},
+          "evidence_refs": {"$ref": "#/$defs/RefList"},
+          "at": {"type": "string", "description": "ISO 8601 timestamp recorded by the runtime when the event was derived."},
+          "delta_ref": {"type": "string", "description": "Optional — the research-delta's key that triggered the derivation."}
+        }
+      }
+    },
     "Intent": {
       "type": "object",
       "required": ["id", "key", "question_ref", "strategy", "priority", "status"],

@@ -419,46 +419,92 @@ def test_candidate_research_patch_persists_without_touching_the_verdict(tmp_path
 
 
 # ---------------------------------------------------------------------------
-# Assumption lifecycle side effects (bidirectional)
+# Assumption lifecycle — Skill-First Refactor v2 (spec §4)
 # ---------------------------------------------------------------------------
+#
+# v2 contract: an ``assumptions_update`` does NOT auto-rewrite
+# ``blocked_path.status``. The runtime emits a derived event so the model
+# can read the fact, and the model owns the reopen / close decision via an
+# explicit ``blocked_paths_reopen`` (or a follow-up update) entry. These
+# tests pin that boundary — the previous v1 behaviour (auto-reopen /
+# auto-close on assumption flip) is no longer the contract.
 
 
-def test_assumption_disproved_reopens_the_dependent_blocked_path(tmp_path: Path) -> None:
+def test_assumption_disproved_emits_derived_event_not_status_change(tmp_path: Path) -> None:
+    """Spec §4: disproving an assumption is a *fact* the runtime reports,
+    not a *decision* it executes. The blocked path stays ``blocked`` until
+    the model submits an explicit ``blocked_paths_reopen`` entry."""
     root = _init(tmp_path)
     _write_candidate(tmp_path)
     rs.apply_delta(root, _delta())
 
-    report = rs.apply_delta(root, {"schema_version": 1, "assumptions_update": [
+    report = rs.apply_delta(root, {"schema_version": 1, "agent_id": "agent-L5b",
+                                    "assumptions_update": [
         {"ref": "assumption:author_exclude-int-array", "status": "disproved",
          "evidence_refs": ["src/other-caller.php:40"]}]})
 
-    assert report["reopened_blocked_paths"] == ["BP-001"]
+    # v2: assumption_transitions still recorded (factual state change).
     assert report["assumption_transitions"] == [
         {"id": "A-001", "from": "unverified", "to": "disproved"}]
+    # v2: a derived event is reported for the model to read.
+    events = report["derived_events"]
+    assert any(ev["event"] == "blocked_path_reopenable" and ev["subject"] == "BP-001"
+               for ev in events), (
+        f"expected a 'blocked_path_reopenable' derived event for BP-001, "
+        f"got {[ev['event'] for ev in events]}"
+    )
+    # v2: the runtime does NOT auto-rewrite blocked_path.status. Model decides.
+    assert report["reopened_blocked_paths"] == []
     ledger = rs.load_ledger(root)
-    assert ledger["blocked_paths"][0]["status"] == "reopened"
+    assert ledger["blocked_paths"][0]["status"] == "blocked", (
+        "blocked_path.status must stay 'blocked' without an explicit "
+        "blocked_paths_reopen entry from the model"
+    )
+    # On disk: derived_events persisted.
+    persisted = ledger.get("derived_events") or []
+    assert any(ev["subject"] == "BP-001" for ev in persisted)
     # Reopening a path is not rejecting the candidate: the two lifecycles stay separate.
     saved = json.loads((tmp_path / "mini-audit" / "candidates"
                         / "review-chamber-candidates.json").read_text(encoding="utf-8"))
     assert saved["candidates"][0]["status"] == "needs_validation"
 
 
-def test_assumption_supported_closes_the_blocked_path(tmp_path: Path) -> None:
+def test_assumption_supported_emits_derived_event_not_close(tmp_path: Path) -> None:
+    """Spec §4: an assumption flip to ``supported`` is also a fact the runtime
+    reports — closing a blocked path is still a research decision. The
+    runtime does not write ``closed_blocked_paths`` on its own."""
     root = _init(tmp_path)
     _write_candidate(tmp_path)
     rs.apply_delta(root, _delta())
 
-    report = rs.apply_delta(root, {"schema_version": 1, "assumptions_update": [
+    report = rs.apply_delta(root, {"schema_version": 1, "agent_id": "agent-L5b",
+                                    "assumptions_update": [
         {"ref": "assumption:author_exclude-int-array", "status": "supported",
          "evidence_refs": ["src/rest-handler.php:88"]}]})
 
-    assert report["closed_blocked_paths"] == [{"id": "BP-001", "reason": "blocker_supported"}]
+    events = report["derived_events"]
+    assert any(ev["event"] == "blocked_path_close_supported"
+               and ev["subject"] == "BP-001" for ev in events), (
+        f"expected a 'blocked_path_close_supported' derived event for BP-001, "
+        f"got {[ev['event'] for ev in events]}"
+    )
+    assert report["closed_blocked_paths"] == [], (
+        "runtime must NOT auto-close blocked paths in spec §4; the model owns close"
+    )
     path = rs.load_ledger(root)["blocked_paths"][0]
-    assert path["status"] == "closed"
-    assert path["close_reason"] == "blocker_supported"
+    assert path["status"] == "blocked", (
+        f"blocked_path.status must stay 'blocked' without explicit model action; "
+        f"got {path['status']}"
+    )
+    assert "close_reason" not in path, (
+        "runtime must not auto-write close_reason; that is a research decision"
+    )
 
 
 def test_blocked_path_reopen_operation_is_explicit(tmp_path: Path) -> None:
+    """The model's explicit reopen entry still works — and is now the *only*
+    path to a reopen. (Spec §4 moved it from runtime side-effect to model
+    decision.)"""
     root = _init(tmp_path)
     _write_candidate(tmp_path)
     rs.apply_delta(root, _delta())

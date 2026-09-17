@@ -196,6 +196,17 @@
             "diff_evidence_ref": "diff-scope.json:scope_type=since:baseline=v1:target=HEAD"
           }
         ],
+        "blocked_paths_reopen": [
+          {
+            "ref": "blocked:query-needs-scalar",
+            "evidence_refs": [
+              "A.py:27"
+            ],
+            "reopen_if": [
+              "a caller reaches the query without coercing the filter"
+            ]
+          }
+        ],
         "capabilities_update": [
           {
             "ref": "cap:control-scalar-parameter",
