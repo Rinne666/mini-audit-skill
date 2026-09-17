@@ -936,6 +936,22 @@ def cmd_search_saturation(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    """Build a derived one-stop view of the audit (spec §7).
+
+    The snapshot only SELECTs / JOINs / DERIVEs / SUMMARIZEs — it does not
+    rank, plan, choose, or recommend. The model reads it and decides.
+    """
+    from . import snapshot as snapshot_mod
+    audit_root = _resolve_audit_root(args)
+    out = getattr(args, "out", None)
+    payload = snapshot_mod.write_snapshot(audit_root, out=out)
+    _emit({"ok": True, "command": "snapshot",
+           "snapshot": str(Path(out) if out else audit_root / "snapshot.json"),
+           **payload})
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mini-audit-runtime",
@@ -1209,6 +1225,12 @@ def build_parser() -> argparse.ArgumentParser:
     s_search_sat.add_argument("--workdir", default=".",
                               help="directory evidence references resolve against (default: cwd)")
     s_search_sat.set_defaults(func=cmd_search_saturation)
+
+    # snapshot — spec §7 read-only derived view
+    s_snapshot = add_sub("snapshot", help="build a one-stop read-only view of audit state")
+    s_snapshot.add_argument("--out", default=None,
+                            help="write the snapshot to PATH (default: <audit-root>/snapshot.json)")
+    s_snapshot.set_defaults(func=cmd_snapshot)
 
     return p
 
