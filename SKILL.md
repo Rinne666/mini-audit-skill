@@ -237,6 +237,101 @@ One asymmetry is deliberate and must be preserved: a dangling candidate referenc
 
 The launcher resolves the runtime package via three strategies: `MINI_AUDIT_RUNTIME_HOME` env → `$MAVIS_SKILLS_DIR/mini-audit` → relative to the script.
 
+---
+
+## Consuming the Skill (without the runtime)
+
+> **Boundary statement (do not weaken):**
+> The deterministic layer in `runtime/` is the Skill's private engine.
+> Consumers (humans, other agents, CI, hooks) only ever talk to the Skill
+> itself — through a slash command, a natural-language request, or the
+> `--action=run --mode=<mode>` invocation. Anything you can do at the
+> Skill boundary you should do there. The runtime CLI is not a public API.
+
+### Entry points (the only ones consumers should use)
+
+```text
+slash command   /mini-audit-{lite | balanced | deep | confirm | revisit | diff
+                              | merge | longshot | reinvest | knowledge-base
+                              | status | resume | export | help}
+
+natural language  "audit this repo" / "review commit <sha>" / "review this PR"
+                  / "continue last audit" / "revisit F-007" / "give me the report"
+
+file trigger      .workbuddy/mini-audit-trigger.json → starts an audit automatically
+
+CI / harness      /skill:mini-audit --action=run --mode=<mode> [--...]
+                  Provide the intent; the Skill decides which runtime call, if any,
+                  is needed. CI never translates the intent itself.
+```
+
+### Modes — what to pick when
+
+```text
+/mini-audit-lite          5–15 min   quick SAST + secrets + per-finding PoC
+/mini-audit-balanced      30–60 min  default depth — 6 sub-agents × 7 phases
+/mini-audit-deep          hours      balanced's 17-stage follow-up (incl. P12 variants)
+/mini-audit-confirm                 live verification + real PoC in an isolated container
+/mini-audit-revisit                 re-audit an old finding (anti-anchoring)
+/mini-audit-diff         (this v1)   incremental audit over a commit / since / PR
+/mini-audit-merge                   merge multiple audit outputs deterministically
+/mini-audit-status                  human-readable progress, last failure, no JSON to read
+/mini-audit-resume                  continue from the phase index in audit-state.json
+/mini-audit-export                  Markdown / SARIF / JSON output
+/mini-audit-help                    command list + which modes are currently usable
+```
+
+### Status, resume and export
+
+```text
+/mini-audit-status                         current phase, progress, last failure
+/mini-audit-status --finding <id>          single-finding status + reachability proof
+/mini-audit-export --out report.md        Markdown
+/mini-audit-export --format sarif --out x  for downstream scanners
+/mini-audit-export --format json  --out x  for programmatic consumers
+```
+
+Every confirmed finding ships with `boundary.capability_refs` — a verified path
+from the principal to the privileged capability, not a "may exist" claim.
+
+### What NOT to do (this boundary is enforced by the Skill, not by documentation alone)
+
+```text
+❌  Don't call the runtime CLI yourself.                Skill is the only public entry; the runtime
+                                                       CLI is the engine under the hood.
+❌  Don't hand-edit audit-state files.                  Schema validation rejects writes from outside
+                                                       the runtime's transaction.
+❌  Don't write research deltas by hand.                 Agent drafts go through `research apply`;
+                                                       the runtime is the single writer of the ledger.
+❌  Don't `rm -rf` the audit root to start over.         Use `/mini-audit-resume --fresh` or pick a
+                                                       different `--audit-root`.
+❌  Don't commit audit artifacts into the target repo.   Audit state belongs to the auditing tool,
+                                                       not to the audited object.
+❌  Don't translate intent into runtime calls in CI / hooks. Provide the intent; let the Skill translate.
+```
+
+### When to escalate to the runtime (the only legitimate reasons)
+
+```text
+- You are extending the Skill itself (new mode, new phase, new canonical artifact).
+- You are fixing a Skill bug that the Skill cannot diagnose from inside.
+- You are writing the Skill's own tests / evals / CI.
+
+In all three cases, the changes go through `runtime/`, `references/methodology/`,
+`schemas/`, `tests/`, or `evals/` — not through consumer-facing commands.
+```
+
+### TL;DR
+
+```text
+enter   : /mini-audit-*   or   "audit X / review commit Y / continue last audit"
+observe : /mini-audit-status, /mini-audit-export
+forbid  : direct runtime CLI calls, hand-editing audit-state, committing audit
+          artifacts to the target repo, translating intent into runtime calls in CI
+```
+
+---
+
 ## The audit round loop (the spine of this skill)
 
 Every audit runs this loop. It is the operational form of the Skill/Harness split
