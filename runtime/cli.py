@@ -694,11 +694,23 @@ def cmd_diff_stage(args: argparse.Namespace) -> int:
 def cmd_run_with_lease(args: argparse.Namespace) -> int:
     """Run a registered agent function under the scheduler.
 
-    The runtime hosts a small registry of common tasks (validate-finding,
-    fingerprint, etc.) that can be invoked with deterministic retry/timeout.
+    Deprecated since Skill-First Refactor v2 (spec §9): agent scheduling is
+    a Harness responsibility. This command is no longer registered in
+    ``build_parser`` — call it directly only if a Harness stub imports it.
+    The Lease / ConcurrencyLease / dispatch half of ``runtime.scheduler`` is
+    frozen for the same reason; ``run_command_with_timeout`` is the only
+    scheduler primitive that stays live (the sandbox depends on it).
+
     Real agents are dispatched by the orchestrator; this command exists so
     ad-hoc CLI invocation can exercise the same code path.
     """
+    import warnings
+    warnings.warn(
+        "cmd_run_with_lease is deprecated; agent scheduling belongs to the "
+        "Harness, not the runtime.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     cfg = dict(DEFAULT_CONFIG)
     if args.config:
         cfg.update(json.loads(Path(args.config).read_text(encoding="utf-8")))
@@ -1110,17 +1122,15 @@ def build_parser() -> argparse.ArgumentParser:
     s_sb_run.set_defaults(func=cmd_sandbox_run)
 
     # lease
-    s_lease = add_sub("lease", help="run a registered task under scheduler policy")
-    s_lease_sub = s_lease.add_subparsers(dest="subcommand", required=True)
-    s_lease_run = s_lease_sub.add_parser("run", help="run a task")
-    s_lease_run.add_argument("task", help="task name (validate-finding, fingerprint, ...)")
-    s_lease_run.add_argument("--phase", default="adhoc")
-    s_lease_run.add_argument("--workdir", default=".")
-    s_lease_run.add_argument("--config", default=None)
-    s_lease_run.add_argument("--timeout", type=int, default=None)
-    s_lease_run.add_argument("--max-attempts", type=int, default=None)
-    s_lease_run.add_argument("--agent-id", default=None)
-    s_lease_run.set_defaults(func=cmd_run_with_lease)
+    # The ``lease`` subcommand was removed in Skill-First Refactor v2 (spec §9):
+    # agent scheduling belongs to the Harness, not the runtime. The function
+    # ``cmd_run_with_lease`` is still importable for Harness stubs and emits a
+    # DeprecationWarning, but it is no longer advertised in the CLI. The
+    # ``runtime.scheduler`` module itself stays — ``run_command_with_timeout``
+    # is load-bearing for the sandbox policy and ``run_command_with_timeout``
+    # / ``compute_backoff`` are still unit-tested. The Lease / ConcurrencyLease
+    # / dispatch half is frozen.
+    # See tests/unit/test_cli.py::test_build_parser_no_longer_exposes_lease_command.
 
     # objective (Search Governance control plane, R2-3)
     s_objective = add_sub("objective", help="audit objective operations")

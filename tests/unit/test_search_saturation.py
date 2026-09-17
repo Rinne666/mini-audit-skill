@@ -250,10 +250,12 @@ def test_a_passing_gate_does_not_claim_the_search_is_exhausted() -> None:
     # terminology is asserted from a document that actually passes.
     passing = _evaluate(_ledger())
     assert passing["hard_gate"]["passed"] is True
-    assert passing["verdict"] == saturation.VERDICT_MINIMUM_MET
-    assert "exhaust" not in passing["verdict"]
+    # verdict is namespaced (spec §4); the legacy bare-string label is kept
+    # under ``verdict.legacy_label`` for backward compatibility.
+    assert passing["verdict"]["legacy_label"] == saturation.VERDICT_MINIMUM_MET
+    assert "ceiling" in passing["verdict_means"]
     assert "floor, not a claim" in passing["verdict_means"]
-    assert document["verdict"] == saturation.VERDICT_BLOCKED
+    assert document["verdict"]["legacy_label"] == saturation.VERDICT_BLOCKED
 
 
 def test_the_debt_summary_is_shown_even_when_the_gate_passes(tmp_path: Path) -> None:
@@ -268,7 +270,7 @@ def test_the_debt_summary_is_shown_even_when_the_gate_passes(tmp_path: Path) -> 
     assert document["hard_gate"]["passed"] is True, _failures(document)
     assert document["debt"]["p0_deferred"] == 5
     assert "5 deferred / 0 resolved" in document["debt"]["summary"]
-    assert document["verdict"] == saturation.VERDICT_MINIMUM_MET
+    assert document["verdict"]["legacy_label"] == saturation.VERDICT_MINIMUM_MET
 
 
 def test_the_report_is_written_and_matches_the_check(tmp_path: Path) -> None:
@@ -298,3 +300,73 @@ def test_a_legacy_audit_passes_the_saturation_gate() -> None:
     ok, message = run_semantic("search_saturation_hard_gate", {"enabled": False})
     assert ok is True
     assert message == ""
+
+
+# ---------------------------------------------------------------------------
+# Verdict namespace (Skill-First Refactor v2, spec §4)
+# ---------------------------------------------------------------------------
+#
+# The hard gate is *derived fact* — runtime reports the floor, model decides
+# whether to stop the audit. The verdict must live under ``derived.*`` so a
+# downstream consumer can read it as a fact, not as a runtime-driven action.
+
+
+def test_verdict_is_namespaced_under_derived_saturation_check() -> None:
+    document = _evaluate()
+    verdict = document["verdict"]
+    assert isinstance(verdict, dict), (
+        f"verdict must be a namespaced dict, got {type(verdict).__name__}"
+    )
+    assert verdict["kind"] == saturation.VERDICT_KIND, (
+        f"verdict.kind must be {saturation.VERDICT_KIND!r}, got {verdict.get('kind')!r}"
+    )
+    assert verdict["kind"].startswith("derived."), (
+        f"runtime-derived semantic fields must live under the derived.* namespace "
+        f"(spec §4), got {verdict['kind']!r}"
+    )
+
+
+def test_verdict_value_is_floor_met_when_hard_gate_passes() -> None:
+    document = _evaluate()
+    assert document["hard_gate"]["passed"] is True
+    assert document["verdict"]["value"] == saturation.VERDICT_FLOOR_MET
+
+
+def test_verdict_value_is_floor_not_met_when_hard_gate_fails() -> None:
+    document = _evaluate(
+        ledger=_ledger(open_questions=[
+            {"id": "OQ-001", "key": "oq:x", "question": "x", "priority": "P0",
+             "status": "open"},
+        ]),
+    )
+    assert document["hard_gate"]["passed"] is False
+    assert document["verdict"]["value"] == saturation.VERDICT_FLOOR_NOT_MET
+
+
+def test_verdict_legacy_label_is_preserved_for_compatibility() -> None:
+    """Consumers still reading the bare ``verdict`` string get the legacy label
+    so this rename is not breaking. New consumers should ignore ``legacy_label``
+    and read ``value`` + ``kind`` instead."""
+    passing = _evaluate()
+    assert passing["verdict"]["legacy_label"] == saturation.VERDICT_MINIMUM_MET
+    failing = _evaluate(
+        ledger=_ledger(open_questions=[
+            {"id": "OQ-001", "key": "oq:x", "question": "x", "priority": "P0",
+             "status": "open"},
+        ]),
+    )
+    assert failing["verdict"]["legacy_label"] == saturation.VERDICT_BLOCKED
+
+
+def test_verdict_means_explicitly_defers_stop_decision_to_model() -> None:
+    """The verdict_means string must say the runtime does not decide whether
+    the audit should stop. This is the test that pins the spec §4 contract."""
+    document = _evaluate()
+    text = document["verdict_means"].lower()
+    assert "model decision" in text, (
+        f"verdict_means must defer the stop decision to the model; got {document['verdict_means']!r}"
+    )
+    assert "does not originate" in text, (
+        f"verdict_means must say the runtime does not originate the decision; "
+        f"got {document['verdict_means']!r}"
+    )

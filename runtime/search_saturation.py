@@ -41,10 +41,18 @@ from .search_lock import search_governance_lock
 
 SATURATION_FILENAME = "search-saturation.json"
 
-#: What a passing result may be called. Never "search fully exhausted" — the
-#: gate proves a floor, not a ceiling.
-VERDICT_MINIMUM_MET = "search_saturated_under_current_budget"
-VERDICT_BLOCKED = "hard_gate_failed"
+#: The verdict namespace this module writes under. Spec §4 (Skill-First Refactor v2)
+#: requires runtime-generated semantic fields to live in ``derived.*`` /
+#: ``system.*`` / ``validation.*`` namespaces; saturation checks are *derived
+#: facts about the floor*, never verdicts on whether the audit should stop. The
+#: value is left as a state name (``floor_met`` / ``floor_not_met``) for
+#: machine consumption; whether to stop the audit is a model decision the
+#: runtime does not originate.
+VERDICT_KIND = "derived.saturation_check"
+VERDICT_FLOOR_MET = "floor_met"
+VERDICT_FLOOR_NOT_MET = "floor_not_met"
+VERDICT_MINIMUM_MET = "search_saturated_under_current_budget"  # legacy label
+VERDICT_BLOCKED = "hard_gate_failed"  # legacy label
 
 #: Terminal states a P0 open question may be closed with.
 P0_TERMINAL = ("resolved", "refuted", "deferred")
@@ -270,10 +278,18 @@ def evaluate(
             "p0_deferred": signals["p0_deferred"],
             "p0_resolved": signals["p0_resolved"],
         },
-        "verdict": VERDICT_MINIMUM_MET if not failures else VERDICT_BLOCKED,
+        "verdict": {
+            "kind": VERDICT_KIND,
+            "value": VERDICT_FLOOR_MET if not failures else VERDICT_FLOOR_NOT_MET,
+            # Legacy label kept for any consumer still reading the bare string.
+            "legacy_label": VERDICT_MINIMUM_MET if not failures else VERDICT_BLOCKED,
+        },
         "verdict_means": (
-            "the minimum completion conditions were met under the current budget; "
-            "this is a floor, not a claim that the search is exhausted"
+            "runtime reports the saturation floor as a derived fact; whether to "
+            "stop the audit is a model decision the runtime does not originate. "
+            "A passing floor means the minimum completion conditions were met "
+            "under the current budget — a floor, not a claim that the search "
+            "is at its ceiling."
         ),
     }
 
