@@ -56,12 +56,13 @@ NOISE_TOKENS = {
     # gate semantic check: tests "no units are still planned", the
     # verb is *check*, not *plan*.
     "_check_coverage_no_planned",
-    # scheduler.frozen-remnant (spec §9): keep until the Harness owns
-    # agent scheduling; `dispatch` here is the runtime's pre-existing
-    # retry primitive, not a runtime control verb. Listed in SKILL.md
-    # as "deprecated / frozen / harness-owned".
-    "dispatch", "dispatch_command", "parallel", "compute_backoff",
 }
+# The scheduler.frozen-remnant allowlist (dispatch / dispatch_command
+# / parallel / compute_backoff) was removed when runtime/scheduler.py
+# was deleted in Skill-First Refactor v2.x. runtime/ no longer owns a
+# scheduler; the process-group deadline primitive lives in
+# runtime/process_control.py and does not match any FORBIDDEN_TOKENS
+# entry.
 
 
 def _iter_python_files() -> list[Path]:

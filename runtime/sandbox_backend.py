@@ -41,7 +41,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from .scheduler import run_command_with_timeout
+from .process_control import run_command_with_timeout
 
 # ---------------------------------------------------------------------------
 # Control vocabulary
@@ -58,7 +58,7 @@ CONTROL_NETWORK_DENIAL = "network_denial"
 CONTROL_ENV_SANITIZED = "env_sanitized"
 CONTROL_RESOURCE_LIMITS = "resource_limits"
 
-# Enforced by the scheduler's process-group deadline; covered by the hard
+# Enforced by the process_control process-group deadline; covered by the hard
 # timeout tests rather than the canary (by the time a canary could observe it,
 # the process is already dead).
 CONTROL_HARD_TIMEOUT = "hard_timeout"
@@ -879,7 +879,7 @@ def _verify_with_canary(
         # sandbox is what makes this evidence rather than intent.
         CONTROL_ENV_SANITIZED: base is not None and bool(base.get("saw_env")) and not bool(isolated.get("saw_env")),
         CONTROL_RESOURCE_LIMITS: False,  # measured separately, below
-        CONTROL_HARD_TIMEOUT: True,      # scheduler process-group deadline
+        CONTROL_HARD_TIMEOUT: True,      # process_control process-group deadline
     }
 
     controls[CONTROL_RESOURCE_LIMITS] = _verify_resource_limits(

@@ -3,10 +3,10 @@
 Two different things in this runtime are easy to confuse, and this module
 exists partly to keep them apart:
 
-    scheduler.Lease / ConcurrencyLease
-        A concurrency *quota*. How many agents may run at once. Implemented
-        with an in-process ``threading.Semaphore``; it says nothing about who
-        may write canonical state, and it does not span processes.
+    process_control.run_command_with_timeout
+        A process-group deadline primitive. How long an arbitrary
+        subprocess may run. It says nothing about who may write canonical
+        state, and it does not span processes.
 
     SearchGovernanceLock
         Cross-process mutual exclusion over the research artifacts. A research

@@ -79,7 +79,7 @@ from .sandbox import (
     run_sandboxed,
     write_probe,
 )
-from .scheduler import DEFAULT_CONFIG, dispatch
+from .process_control import CommandOutcome, run_command_with_timeout
 from .source_identity import SourceIdentity, SourceIdentityError
 from .state import (
     PHASE_COMPLETE,
@@ -691,90 +691,13 @@ def cmd_diff_stage(args: argparse.Namespace) -> int:
 
 
 
-def cmd_run_with_lease(args: argparse.Namespace) -> int:
-    """Run a registered agent function under the scheduler.
-
-    Deprecated since Skill-First Refactor v2 (spec §9): agent scheduling is
-    a Harness responsibility. This command is no longer registered in
-    ``build_parser`` — call it directly only if a Harness stub imports it.
-    The Lease / ConcurrencyLease / dispatch half of ``runtime.scheduler`` is
-    frozen for the same reason; ``run_command_with_timeout`` is the only
-    scheduler primitive that stays live (the sandbox depends on it).
-
-    Real agents are dispatched by the orchestrator; this command exists so
-    ad-hoc CLI invocation can exercise the same code path.
-    """
-    import warnings
-    warnings.warn(
-        "cmd_run_with_lease is deprecated; agent scheduling belongs to the "
-        "Harness, not the runtime.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    cfg = dict(DEFAULT_CONFIG)
-    if args.config:
-        cfg.update(json.loads(Path(args.config).read_text(encoding="utf-8")))
-
-    registry: dict[str, Any] = {
-        "validate-finding": _task_validate_finding,
-        "fingerprint": _task_fingerprint,
-    }
-    fn = registry.get(args.task)
-    if fn is None:
-        _err(f"unknown task {args.task!r}; registered: {sorted(registry)}")
-
-    outcome = dispatch(
-        workdir=Path(args.workdir or "."),
-        role=args.task,
-        phase=args.phase or "adhoc",
-        fn=fn,
-        config=cfg,
-        timeout_seconds=args.timeout,
-        max_attempts=args.max_attempts,
-        agent_id=args.agent_id,
-    )
-    payload = {
-        "ok": outcome.success,
-        "command": "lease.run",
-        "task": args.task,
-        "agent_id": outcome.agent_id,
-        "attempts": outcome.attempts,
-        "elapsed_seconds": round(outcome.elapsed_seconds, 3),
-        "timed_out": outcome.timed_out,
-        "result": outcome.result,
-        "error": outcome.error,
-    }
-    _emit(payload, exit_code=0 if outcome.success else 1)
-    return 0 if outcome.success else 1
-
-
-def _task_validate_finding(lease: Any) -> dict[str, Any]:
-    """Example task: validate the first finding in findings.json."""
-    from .findings import FindingStore
-
-    findings_path = lease.workdir / "findings.json"
-    if not findings_path.exists():
-        return {"success": False, "error": "findings.json missing"}
-    store = FindingStore.load(findings_path)
-    if not store.findings:
-        return {"success": True, "validated": 0}
-    for f in store.findings:
-        validate_finding(f)
-    return {"success": True, "validated": len(store.findings)}
-
-
-def _task_fingerprint(lease: Any) -> dict[str, Any]:
-    """Example task: recompute fingerprints for all findings."""
-    from .findings import FindingStore
-
-    findings_path = lease.workdir / "findings.json"
-    if not findings_path.exists():
-        return {"success": False, "error": "findings.json missing"}
-    store = FindingStore.load(findings_path)
-    for f in store.findings:
-        f["fingerprint"] = compute_fingerprint(f)
-    store.save(findings_path)
-    return {"success": True, "count": len(store.findings)}
+# cmd_run_with_lease, _task_validate_finding, _task_fingerprint,
+# dispatch, DEFAULT_CONFIG were removed in Skill-First Refactor v2.x
+# (spec §9): agent scheduling belongs to the Harness, not the runtime.
+#
+# The one deterministic safety primitive the runtime still owns about
+# processes — ``run_command_with_timeout`` — lives in
+# ``runtime.process_control`` and is consumed by the sandbox policy.
 
 
 # ---------------------------------------------------------------------------
@@ -1137,16 +1060,12 @@ def build_parser() -> argparse.ArgumentParser:
                           help="command to run (prefix with --)")
     s_sb_run.set_defaults(func=cmd_sandbox_run)
 
-    # lease
-    # The ``lease`` subcommand was removed in Skill-First Refactor v2 (spec §9):
-    # agent scheduling belongs to the Harness, not the runtime. The function
-    # ``cmd_run_with_lease`` is still importable for Harness stubs and emits a
-    # DeprecationWarning, but it is no longer advertised in the CLI. The
-    # ``runtime.scheduler`` module itself stays — ``run_command_with_timeout``
-    # is load-bearing for the sandbox policy and ``run_command_with_timeout``
-    # / ``compute_backoff`` are still unit-tested. The Lease / ConcurrencyLease
-    # / dispatch half is frozen.
-    # See tests/unit/test_cli.py::test_build_parser_no_longer_exposes_lease_command.
+    # The ``lease`` subcommand and ``cmd_run_with_lease`` were deleted in
+    # Skill-First Refactor v2.x (spec §9): agent scheduling belongs to the
+    # Harness, not the runtime. The ``runtime.scheduler`` module was also
+    # deleted; the one deterministic safety primitive the runtime still
+    # owns about processes is ``runtime.process_control.run_command_with_timeout``,
+    # consumed by the sandbox policy.
 
     # objective (Search Governance control plane, R2-3)
     s_objective = add_sub("objective", help="audit objective operations")

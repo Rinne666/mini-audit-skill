@@ -15,11 +15,10 @@ Layer boundaries (Skill-First Refactor v1):
   artifacts, parse them, schema-validate them, and pass gates.
 
 What is deliberately *not* here: agent dispatch, concurrency, retries, worker
-lifecycle and recovery. Those belong to the agent harness. `scheduler.Lease` and
-`scheduler.dispatch` are frozen remnants of an earlier design — kept because they
-work, not because they are the intended home; `scheduler.run_command_with_timeout`
-stays because the sandbox needs an enforceable hard timeout. See SKILL.md
-§ "Skill / Harness boundary" for the per-module classification.
+lifecycle and recovery. Those belong to the agent harness. The process-group
+deadline primitive lives in `process_control` and is consumed by the sandbox
+policy. See SKILL.md § "Skill / Harness boundary" for the per-module
+classification.
 
 Inside the deterministic layer, Search Governance v1 adds a second plane:
 
@@ -46,8 +45,9 @@ Public entry points:
 * `gates.GateRunner` — phase gate executor.
 * `fingerprint.compute_fingerprint` — stable SHA-256 finding fingerprint.
 * `source_identity.SourceIdentity` — git-derived source identity.
-* `scheduler` — frozen: process timeout primitive (used by the sandbox) plus the
-  legacy lease/dispatch pair.
+* `process_control.run_command_with_timeout` — process-group hard-timeout
+  primitive. The only deterministic safety primitive about processes the
+  runtime owns.
 * `sarif.SarifNormalizer` — scanner output → candidate records.
 * `diff_scope.DiffScope` — changed-symbol caller tracing.
 * `export.Exporter` — JSON / Markdown / SARIF export.
@@ -58,6 +58,7 @@ Public entry points:
 * `search_closure` — does a reported capability chain actually close?
 * `search_saturation` — the two-condition completion gate and the debt report.
 * `search_lock.SearchGovernanceLock` — the Search Governance write lock.
+* `snapshot` — read-only derived view of the audit state for the model.
 
 The package is intentionally stdlib-only (Python 3.9+). External JSON-schema
 validation is performed via the `jsonschema` package when available; otherwise
@@ -77,7 +78,7 @@ __all__ = [
     "gates",
     "schema",
     "source_identity",
-    "scheduler",
+    "process_control",
     "sandbox",
     "sandbox_backend",
     "sarif",
@@ -89,6 +90,7 @@ __all__ = [
     "search_lock",
     "search_closure",
     "search_saturation",
+    "snapshot",
 ]
 
 __version__ = "1.4.0"

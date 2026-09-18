@@ -31,7 +31,7 @@ import os
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
-from .scheduler import CommandOutcome, run_command_with_timeout
+from .process_control import CommandOutcome, run_command_with_timeout
 from .sandbox_backend import (
     ALL_CONTROLS,
     BACKENDS,
@@ -75,8 +75,8 @@ EXECUTION_KINDS = (KIND_SOURCE_SCAN, KIND_TARGET_BUILD, KIND_POC, KIND_TARGET)
 # Which controls a kind actually depends on. This table — not the probe — is the
 # authority; a probe can only report what a backend demonstrated.
 #
-# `hard_timeout` is enforced by the scheduler's process-group deadline and is
-# always available (see `runtime.scheduler`), but it is listed explicitly so the
+# `hard_timeout` is enforced by the process_control process-group deadline and is
+# always available (see `runtime.process_control`), but it is listed explicitly so the
 # requirement is visible where the policy is read.
 REQUIRED_CONTROLS: dict[str, tuple[str, ...]] = {
     KIND_SOURCE_SCAN: (
