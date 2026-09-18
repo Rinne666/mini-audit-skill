@@ -57,7 +57,8 @@ discipline by reading.
 
 ### Scope
 
-Goal: a complete entry map and a one-sentence permission-delta question.
+Goal: a relevant attack-surface map and a one-sentence
+permission-delta question.
 
 Ask the audit:
 
@@ -68,7 +69,8 @@ Ask the audit:
 
 End Scope when the **Objective** and **Attack Surface** sections
 of the notes file are written and the highest-value target is
-named.
+named. The map covers the surface relevant to the objective; it
+expands when later evidence reveals a new reachable boundary.
 
 ### Discover
 
@@ -127,7 +129,8 @@ reference actually helps with.
 Methodology:
 
 - `references/discovery.md` — when the model is about to start
-  Discovery and does not yet have a complete entry map.
+  Discovery and has not yet mapped the attack surface relevant
+  to the objective.
 - `references/verification.md` — when Verification has stalled
   (no Verified Facts after two cycles) or when the model is
   unsure whether an experiment is enough.
@@ -189,8 +192,8 @@ chain passed through the host shell.
 Stop when one of:
 
 - The notes file's **Remaining Questions** section is empty.
-- The model is generating narrower variants without changing
-  the bug class — saturation reached.
+- The model is generating narrower variants without producing
+  a new permission or capability delta — saturation reached.
 - The next round of Verify would only re-confirm existing
   Verified Facts.
 

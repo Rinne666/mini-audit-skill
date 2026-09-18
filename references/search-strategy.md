@@ -17,24 +17,25 @@ hypotheses long after the remaining questions have stopped
 mattering. Two symptoms:
 
 - Hypotheses are getting narrower (different parameter, different
-  encoding, different auth state) without changing the bug class.
+  encoding, different auth state) without producing a new
+  permission or capability delta.
 - The model is re-reading code it has already read.
 
 When either happens, the audit is saturated. Stop, finalize the
 notes, hand over to Report. More searching is not more quality.
 
-## Variant analysis: find the second before reporting the first
+## Variant analysis: one bounded pass after each finding
 
-A common failure of the opposite kind: the audit finds one bug,
-writes it up, and stops. The same bug class usually lives in
-sibling code. Before reporting a finding, ask:
+After a finding is proved, run one bounded variant pass on the
+nearby code: what other code paths are shaped like the one just
+proved? The pass ends when it has either (a) found a new affected
+surface that the audit has not covered, or (b) walked the
+sibling patterns without producing a new permission or capability
+delta. Stop the branch either way — do not loop on the same
+class.
 
-> What other code paths are shaped like the one I just proved?
-
-That question produces variant findings: same bug class, different
-file, same precondition. Variants often matter more than the
-original because the original was likely already fixed in the
-developer's head, and the variants were not.
+Do not delay the report to find every variant. The original is
+the finding; variants are next, not a gate.
 
 ## Chain search: connect one delta to the next
 

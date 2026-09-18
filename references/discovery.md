@@ -20,8 +20,11 @@ For every entry point, name:
 - The shape of the input at entry (raw body, parsed struct,
   authenticated principal).
 
-The goal of Discovery is a complete entry map, not a partial one.
-Partial maps bias the rest of the audit.
+The goal of Discovery is a map of the attack surface relevant to
+the audit objective, not an exhaustive catalog of every endpoint.
+Expand the map when evidence reveals a new reachable boundary.
+A static check-list of every handler biases the audit toward
+counting rather than finding.
 
 ## Read backward from sinks
 
@@ -44,8 +47,9 @@ Read for what is not there:
   for handlers whose sibling handlers check but this one does
   not.
 - Validation. Every entry that feeds a sink should reject
-  malformed input. Absence of validation is a finding even before
-  you know how to exploit it.
+  malformed input. Missing validation is a hypothesis, not a
+  finding. It becomes a finding only when attacker-controlled
+  input produces a meaningful permission or capability delta.
 - Tests. A handler with no tests is a handler that has never
   been wrong from the test suite's perspective. That is evidence
   of low confidence, not evidence of safety.

@@ -45,11 +45,13 @@ different harnesses (different arguments, different timing, different
 denial pattern) and three consistent outcomes start to look like
 evidence.
 
-**Independent verification.** Hand the hypothesis to a sub-agent
-with no prior context: just the audit notes file and the code
-under review. If the sub-agent reaches the same conclusion by
-a different path, the hypothesis is verified. If the sub-agent
-disagrees, the audit is incomplete — go back to Discovery.
+**Independent review.** Hand the hypothesis to a sub-agent with
+no prior context: just the audit notes file and the code under
+review. Independent review is corroboration, not proof. Two
+models agreeing reduces the probability of an obvious miss; it
+does not establish evidence. The Verified Fact still requires
+code or runtime evidence. If the sub-agent disagrees, the audit
+is incomplete — go back to Discovery.
 
 ## When the model finds nothing
 

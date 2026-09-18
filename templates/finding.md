@@ -35,9 +35,12 @@ point. End at the consequence — what the attacker now controls.
 ## Evidence
 
 - The exact code or response that proves the bug. Quote it.
-- If the audit produced a runtime trace, log, or screenshot, link
-  it. If it did not, the finding is unverifiable and must move
-  back to Hypotheses.
+- Runtime evidence is preferred when it materially reduces
+  uncertainty. A complete static proof is sufficient when
+  entry -> control -> sink -> consequence can be established
+  from code. A static proof has to actually be complete: the
+  attacker-controlled input must be traceable to the sink,
+  and the consequence must follow from the sink.
 - The negative control that would have disproved the bug, and why
   it did not.
 
