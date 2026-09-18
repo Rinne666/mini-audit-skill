@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/search-ledger.schema.json",
   "title": "mini-audit search-ledger",
-  "description": "What the search currently knows, suspects, is blocked on, and intends to investigate next (Search Governance v1, R2-1). This is the research plane, not the finding-verdict plane: agents never write this file. They submit a research delta and the runtime applies it under the Search Governance lock. Semantic keys are the idempotency address — unique across every research kind and the attack graph, not per kind — and identity fields decide conflicts while mutable fields merge. Runtime-generated semantic fields are limited to the derived.* / system.* / validation.* namespaces (spec §4 / §5); every other canonical mutation must be backed by a decision entry (see decisions[]).",
+  "description": "What the search currently knows, suspects, is blocked on, and intends to investigate next (Search Governance v1, R2-1). This is the research plane, not the finding-verdict plane: agents never write this file. They submit a research delta and the runtime applies it under the Search Governance lock. Semantic keys are the idempotency address — unique across every research kind and the attack graph, not per kind — and identity fields decide conflicts while mutable fields merge. Runtime-generated semantic fields are limited to the derived.* / system.* / validation.* namespaces (spec §4 / §5); the provenance of an applied delta is recorded as a single derived event per transaction, not as a separate decisions[] array.",
   "type": "object",
   "required": ["schema_version", "generation", "facts", "assumptions", "open_questions", "blocked_paths", "intents"],
   "additionalProperties": true,
@@ -19,10 +19,10 @@
     "open_questions": {"type": "array", "items": {"$ref": "#/$defs/OpenQuestion"}},
     "blocked_paths": {"type": "array", "items": {"$ref": "#/$defs/BlockedPath"}},
     "intents": {"type": "array", "items": {"$ref": "#/$defs/Intent"}},
-    "decisions": {
+    "derived_events": {
       "type": "array",
-      "items": {"$ref": "#/$defs/Decision"},
-      "description": "Append-only decision log (spec §5). The runtime canonicalizes entries from delta.decisions into this array. Entries here MUST have a non-empty decision_id; re-applying the same id is a no-op. Agents never write this field directly."
+      "items": {"type": "object"},
+      "description": "Append-only log of facts the runtime derives (spec section 4). Includes per-transaction ``delta_applied`` events carrying the agent_id / phase / ops of the delta that mutated canonical state, plus mechanical facts like ``blocked_path_reopenable``. The runtime writes here only."
     },
     "updated_at": {"type": "string"}
   },
@@ -225,25 +225,6 @@
         "attempt_refs": {"$ref": "#/$defs/RefList"},
         "created_at": {"type": "string"},
         "updated_at": {"type": "string"}
-      }
-    },
-    "Decision": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Decision provenance (spec §5). The runtime canonicalizes entries from delta.decisions into this array.",
-      "required": ["decision_id", "decided_by", "semantic_mutation", "phase", "reason"],
-      "properties": {
-        "decision_id": {"type": "string", "pattern": "^DEC-[0-9]{4,}$"},
-        "decided_by": {"type": "string", "minLength": 1},
-        "phase": {"type": "string", "minLength": 1},
-        "semantic_mutation": {
-          "enum": ["phase_complete_request", "candidate_promote", "candidate_reject", "finding_confirm", "finding_defer", "blocked_path_reopen", "assumption_judge", "coverage_defer", "research_intent_create", "audit_stop"]
-        },
-        "reason": {"type": "string", "minLength": 1},
-        "evidence_refs": {"$ref": "#/$defs/RefList"},
-        "subject_ref": {"type": "string"},
-        "decided_at": {"type": "string", "description": "ISO 8601 timestamp the runtime stamped at canonicalization time. Agents do not write this; the runtime sets it."},
-        "delta_generation": {"type": "integer", "description": "The generation number the runtime stamped alongside the decision. Lets an audit trace a decision back to the exact transaction that committed it."}
       }
     }
   }

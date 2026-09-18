@@ -466,7 +466,11 @@ def test_assumption_disproved_emits_derived_event_not_status_change(tmp_path: Pa
     )
     # On disk: derived_events persisted.
     persisted = ledger.get("derived_events") or []
-    assert any(ev["subject"] == "BP-001" for ev in persisted)
+    assert any(ev["event"] == "blocked_path_reopenable" and ev["subject"] == "BP-001"
+               for ev in persisted), (
+        f"expected a 'blocked_path_reopenable' derived event for BP-001 on disk, "
+        f"got {[ev.get('event') for ev in persisted]}"
+    )
     # Reopening a path is not rejecting the candidate: the two lifecycles stay separate.
     saved = json.loads((tmp_path / "mini-audit" / "candidates"
                         / "review-chamber-candidates.json").read_text(encoding="utf-8"))
