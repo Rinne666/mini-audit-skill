@@ -99,19 +99,25 @@ def _open_p0_questions(ledger: Mapping[str, Any]) -> list[dict[str, Any]]:
             and q.get("status") not in ("resolved", "refuted", "deferred")]
 
 
-def _high_chain_potential_candidates(ledger: Mapping[str, Any],
-                                    candidates: Mapping[str, Any]) -> list[dict[str, Any]]:
-    out = []
-    candidates_list = candidates.get("candidates") or [] if isinstance(candidates, Mapping) else []
-    for c in candidates_list:
-        if not isinstance(c, Mapping):
+def _high_chain_potential_candidates(
+    candidate_store: Mapping[str, tuple[Any, dict[str, Any], dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Candidates whose declared ``research.chain_potential == high``.
+
+    ``candidate_store`` is the ``candidate_id -> (path, payload, record)``
+    index from :func:`runtime.research_state.candidate_store`. The runtime
+    only filters; the decision to investigate them is a model concern.
+    """
+    out: list[dict[str, Any]] = []
+    for _cid, (_path, _payload, record) in candidate_store.items():
+        if not isinstance(record, Mapping):
             continue
-        block = c.get("research") or {}
+        block = record.get("research") or {}
         if block.get("chain_potential") != "high":
             continue
         out.append({
-            "candidate_id": c.get("candidate_id"),
-            "status": c.get("status"),
+            "candidate_id": record.get("candidate_id"),
+            "status": record.get("status"),
             "chain_potential": block.get("chain_potential"),
             "requires_capabilities": block.get("requires_capabilities") or [],
             "grants_capabilities": block.get("grants_capabilities") or [],
@@ -144,17 +150,37 @@ def _coverage_debt(coverage: Optional[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _broken_chains(graph: Optional[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Confirmed findings whose capability chain does not reach a verified
-    edge on the attack graph. This is a fact (mechanical join), not an
-    action — the model reads it and decides whether to re-investigate."""
-    if graph is None:
+def _broken_chains(graph: Optional[Mapping[str, Any]],
+                   findings: Optional[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Confirmed findings whose capability chain is broken on the graph.
+
+    A "broken chain" is mechanical: the finding's
+    ``boundary.capability_refs`` either are missing or do not form a
+    verified path on the attack graph (per
+    :func:`runtime.search_closure.evaluate_finding_closure`). The model
+    reads the list and decides whether to re-investigate; the runtime
+    does not pick which finding to act on.
+    """
+    if graph is None or findings is None:
         return []
-    # Findings live on a separate file in audit_root; if absent, return [].
-    # This module only has access to ledger+graph by default. To stay
-    # self-contained we accept an optional findings parameter via the
-    # caller (cmd_snapshot).
-    return []
+    from . import search_closure as closure_mod
+
+    rows: list[dict[str, Any]] = []
+    for finding in findings.get("findings") or []:
+        if not isinstance(finding, Mapping):
+            continue
+        if finding.get("verdict") != "confirmed":
+            continue
+        result = closure_mod.evaluate_finding_closure(
+            finding, graph, {}, base_dir=None,
+        )
+        if not result.closed:
+            rows.append({
+                "finding_id": finding.get("id"),
+                "slug": finding.get("slug"),
+                "missing": list(result.failures),
+            })
+    return rows
 
 
 def _verified_capabilities(graph: Optional[Mapping[str, Any]]) -> list[str]:
@@ -232,9 +258,21 @@ def build_snapshot(audit_root: os.PathLike[str] | str,
     diff_scope = _read_optional(audit_root / "diff-scope.json")
     saturation = _read_optional(audit_root / "search-saturation.json")
     state = _read_optional(audit_root / "audit-state.json")
-    candidate_store = research_mod.candidate_store(audit_root)
+    candidate_index = research_mod.candidate_store(audit_root)
+    findings = _read_optional(audit_root / "findings.json")
 
     summary = graph_mod.graph_summary(graph) if isinstance(graph, Mapping) else {}
+
+    if isinstance(graph, Mapping):
+        frontier_open = graph_mod.blocked_frontier(graph)
+        goal_set = set(graph_mod.goal_nodes(graph))
+        reachable_set = set(graph_mod.verified_reachable(graph))
+        reachable_goals = [g for g in goal_set if g in reachable_set]
+    else:
+        frontier_open = []
+        goal_set = set()
+        reachable_set = set()
+        reachable_goals = []
 
     snapshot: dict[str, Any] = {
         "schema_version": SNAPSHOT_VERSION,
@@ -248,16 +286,16 @@ def build_snapshot(audit_root: os.PathLike[str] | str,
         },
         "verified_capabilities": _verified_capabilities(graph),
         "frontier": {
-            "open": summary.get("frontier_edges", []),
-            "reachable_goals": summary.get("reachable_goals", 0),
-            "total_goals": summary.get("goals", 0),
+            "open": frontier_open,
+            "reachable_goals": reachable_goals,
+            "total_goals": list(goal_set),
         },
         "reopenable_blocked_paths": _reopenable_blocked_paths(ledger) if isinstance(ledger, Mapping) else [],
         "open_p0_questions": _open_p0_questions(ledger) if isinstance(ledger, Mapping) else [],
-        "high_chain_potential_candidates": _high_chain_potential_candidates(
-            ledger if isinstance(ledger, Mapping) else {}, candidate_store),
+        "high_chain_potential_candidates": _high_chain_potential_candidates(candidate_index),
         "coverage_debt": _coverage_debt(coverage),
-        "broken_chains": findings.get("broken_chains", []) if findings else [],
+        "broken_chains": _broken_chains(graph if isinstance(graph, Mapping) else None,
+                                          findings if isinstance(findings, Mapping) else None),
         "saturation_floor": saturation.get("verdict", {}).get("value") if saturation else None,
         "saturation_floor_met": (
             saturation.get("verdict", {}).get("value") == VERDICT_FLOOR_MET
