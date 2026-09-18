@@ -86,10 +86,15 @@ disproof is named alongside.
 
 Goal: promote a hypothesis to a Verified Fact or delete it.
 
-Run the experiment named by the disproof. If the disproof fails,
-the hypothesis becomes a Verified Fact. If the disproof holds,
+Attempt the strongest plausible disproof. Promote the hypothesis
+only when:
+
+- evidence establishes the claim end-to-end, and
+- the attempted disproof does not hold.
+
+Failure to disprove alone is not proof. If the disproof holds,
 delete the hypothesis. When the experiment is structural, ask an
-independent sub-agent to confirm.
+independent sub-agent to corroborate.
 
 A Verified Fact is a finding candidate, not yet a finding. The
 finding lives in `templates/finding.md` once Report starts.
@@ -156,11 +161,12 @@ references to "be thorough" is not auditing, it is reading.
 
 Use a sub-agent for:
 
-- **Independent verification.** Hand the notes file and the
-  code under review to a sub-agent with no prior context. If the
-  sub-agent reaches the same conclusion by a different path, the
-  Verified Fact stands. If they disagree, the audit is
-  incomplete — go back to Discovery.
+- **Independent review.** Hand the notes file and the code under
+  review to a sub-agent with no prior context. Independent review
+  is corroboration, not proof. Agreement increases confidence but
+  does not promote a hypothesis. Promotion still requires
+  sufficient code or runtime evidence. Disagreement means the
+  claim needs more verification.
 - **Bounded parallel searches.** Variant hunts and chain
   searches that can run with no shared state from the main
   audit.

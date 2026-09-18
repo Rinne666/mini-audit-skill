@@ -43,9 +43,10 @@ A code review that only reads present code finds present bugs.
 Read for what is not there:
 
 - Authorization. Every handler that touches a user-owned resource
-  should have a permission check. Missing checks are bugs. Look
-  for handlers whose sibling handlers check but this one does
-  not.
+  should have a permission check. A missing authorization check is
+  a high-value hypothesis. It becomes a finding only after
+  reachability and permission delta are established. Look for
+  handlers whose sibling handlers check but this one does not.
 - Validation. Every entry that feeds a sink should reject
   malformed input. Missing validation is a hypothesis, not a
   finding. It becomes a finding only when attacker-controlled
