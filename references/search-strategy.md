@@ -44,9 +44,24 @@ that capability. The chain is a higher-value finding than either
 single bug, because the attacker now reaches a consequence that
 no single bug produced.
 
-For every Verified Fact that grants a capability, search the rest
-of the audit for a sink that consumes that capability. The result
-either confirms a chain or rules it out — both are progress.
+Three chain shapes, not one:
+
+```text
+Capability chain   bug A grants X -> bug B consumes X -> consequence
+State chain       endpoint A writes state -> endpoint B trusts state
+                  -> endpoint C consumes the consequence
+Value chain       endpoint X produces value -> endpoint Y reads it
+                  under a different authorization context
+```
+
+State chains are the easiest to miss. See
+`references/discovery.md` -> Trace across endpoints for the
+reverse-consumer search that drives them.
+
+For every Verified Fact, ask which of the three shapes it
+participates in, then search the rest of the audit for the other
+end. The result either confirms a chain or rules it out - both
+are progress.
 
 ## Sub-agent boundaries
 

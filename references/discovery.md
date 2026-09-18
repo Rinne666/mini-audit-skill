@@ -37,6 +37,86 @@ attacker-controlled value at the parameter the sink binds?
 The model that wins audits is the one that finds the data path
 **between** entry and sink that no one else looked at.
 
+## Trace across endpoints, not just across files
+
+A common failure is reading each endpoint as a single request -> sink
+chain. High-value bugs are usually the cross-endpoint kind:
+
+```text
+POST /profile        ->  writes display_name
+GET  /admin/export   ->  reads display_name  ->  splices CSV/HTML/shell
+```
+
+```text
+POST /invite   ->  creates pending membership row
+POST /accept   ->  trusts that row
+PATCH /role    ->  trusts the active state
+GET  /admin    ->  trusts the role without re-authorization
+```
+
+When tracing an endpoint, do not stop at the request boundary. For
+every security-relevant value or capability, ask:
+
+- Where is it created or written?
+- Where else is it read, trusted, transformed, or consumed?
+- Does another endpoint observe it under a different authorization
+  context?
+- Does it persist through a database, cache, queue, file, token, or
+  session?
+- Can one endpoint create a state that another endpoint assumes was
+  trusted?
+- Can the output or capability of one path become the input or
+  prerequisite of another?
+
+Follow the relationship across files and endpoints until the
+capability is consumed or the chain is disproved.
+
+### Three flows
+
+Track three relationships, not one:
+
+```text
+Value flow       request  -> parser -> service -> sink
+State flow       endpoint A -> DB/cache/session -> endpoint B
+Capability flow  bug A -> grants capability X -> endpoint B trusts X
+                 -> consequence
+```
+
+The audit is most exposed on the second. A model that traces only
+value flow will miss IDOR, business-logic, state-machine, and
+cross-endpoint authz bugs.
+
+### Reverse-consumer search
+
+When the model meets any of the following, do not just ask who writes
+it - ask who reads it, who trusts it, and under what authorization:
+
+```text
+resource ID     tenant ID        user ID
+role / permission
+token           session
+database row    cache key
+queue message   file path
+webhook payload internal header
+status / state enum
+```
+
+For example, on seeing `order.status = "approved"`, the next move is:
+
+> Who reads `approved`? Which endpoints unlock behaviour after
+> `approved`? Do all the write paths to `approved` carry the same
+> authorization? Is the read path doing a fresh authorization, or
+> just trusting the persisted status?
+
+This is the most productive move for business-logic, IDOR,
+state-machine, and cross-endpoint authz classes.
+
+### One principle
+
+> Every security-relevant write should trigger a search for its
+> readers; every security-relevant read should trigger a search for
+> its writers.
+
 ## Read for what is missing
 
 A code review that only reads present code finds present bugs.
