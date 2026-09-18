@@ -73,15 +73,20 @@ down at all:
 | `sandbox.py`, `sandbox_backend.py` | **keep** | isolation enforcement plus the differential canary that proves it. `run_command_with_timeout` is what makes the `hard_timeout` control real rather than declared |
 | `search_closure.py`, `search_saturation.py` | **keep** | the two L7 validators: does a reported chain close, and has the audit met its floor |
 | `search_lock.py` (`SearchGovernanceLock`) | **keep for now** | see the exit criterion below |
-| `scheduler.py` — `Lease`, `ConcurrencyLease`, `dispatch` | **frozen → harness** | concurrency quota and worker lifecycle are harness responsibilities. No new features; delete when the harness owns agent scheduling. The module stays because `run_command_with_timeout` is still load-bearing for the sandbox |
+| `process_control.py` — `run_command_with_timeout` | **keep** | the only deterministic safety primitive the runtime owns about processes. Used by the sandbox policy to enforce `hard_timeout_verified=True` |
 | `search_governor.py` | **withdrawn** | ranking is a policy now: `references/methodology/search-governance.md`. A rule only the runtime can apply is a rule that cannot be corrected by editing a paragraph |
 
 **Exit criteria, so these are decisions and not drift.** Delete the lock when the
 harness can *guarantee* a single writer (not merely be expected to honour it);
-until then keep it, because a violated convention corrupts state silently. Delete
-`scheduler`'s lease/dispatch half when the harness owns agent scheduling. Sink a
-`references/` rule back into code only after the model is observed getting it
-wrong repeatedly — prove the policy first, then move the part that keeps failing.
+until then keep it, because a violated convention corrupts state silently.
+Agent scheduling, concurrency, and worker lifecycle belong to the Harness;
+the runtime's `scheduler` module was deleted in Skill-First Refactor v2.x
+because every scheduler primitive other than `run_command_with_timeout`
+was a Harness responsibility. The process-group deadline primitive lives
+in `runtime.process_control.py` and is the only one the runtime still owns.
+Sink a `references/` rule back into code only after the model is observed
+getting it wrong repeatedly — prove the policy first, then move the part
+that keeps failing.
 
 ### Layers
 
@@ -124,7 +129,7 @@ mini-audit-runtime export --format {json|md|sarif} [--verdict V] [--min-severity
 mini-audit-runtime source {capture|diff} --repo-root <path>
 mini-audit-runtime sarif normalize <file> --source <scanner>
 mini-audit-runtime diff scope --repo-root <path> --baseline <sha> --target <sha> [--symbol X ...]
-mini-audit-runtime lease run <task> [--phase P] [--timeout N] [--max-attempts N]
+mini-audit-runtime snapshot [--audit-root PATH] [--out PATH]
 mini-audit-runtime objective init --from-proposal <path> [--agent ID]
 mini-audit-runtime objective replace --from <file> --force --reason "..." [--agent ID]
 mini-audit-runtime objective show

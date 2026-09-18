@@ -95,9 +95,9 @@ Twelve operations, no free-form edits:
 
 ```text
 facts_add            assumptions_add      assumptions_update
-questions_add        questions_resolve    blocked_paths_add
+research_intents_add research_intents_update blocked_paths_add
 blocked_paths_reopen capabilities_add     capabilities_update
-edges_add            edges_update         intents_add
+edges_add            edges_update
 candidate_updates
 ```
 
@@ -119,8 +119,8 @@ earlier round proposed, and recording what a later round learned:
     {"ref": "assumption:author-exclude-int-array", "status": "disproved",
      "evidence_refs": ["src/cli/import-command.php:41"]}
   ],
-  "questions_resolve": [
-    {"ref": "oq:alternate-caller-bypass", "status": "resolved",
+  "research_intents_update": [
+    {"ref": "ri:bp-031-prerequisite", "status": "open",
      "reason": "the CLI import path builds the same query without coercion",
      "evidence_refs": ["src/cli/import-command.php:41"]}
   ],
@@ -147,9 +147,10 @@ earlier round proposed, and recording what a later round learned:
 
 Two things to know before copying that block:
 
-* `assumptions_update` and `questions_resolve` are the two mutations with
-  **side effects**: a disproved assumption reopens the blocked paths that name
-  it, and a supported one closes them (see §4). They are not just field writes.
+* `assumptions_update` is a mutation with a **side effect**: a disproved
+  assumption emits a derived event `blocked_path_reopenable`; the model's
+  own `blocked_paths_reopen` decides what to do with it (see §4). It is not
+  a runtime action — the runtime only reports the mechanical fact.
 * `candidate_updates` requires the candidate to already exist and is refused
   otherwise (`UNKNOWN_CANDIDATE`), which is why the round-1 template omits it —
   the other eleven operations apply cleanly to a fresh audit, and a template that

@@ -1132,8 +1132,8 @@
     {
       "path": "methodology/research-state.md",
       "kind": "methodology",
-      "size_bytes": 15692,
-      "sha256": "eaf7a17da807eac3d03d1c5fad5bf6dbf314378e02d76e3883e6e1c325cc065f",
+      "size_bytes": 15732,
+      "sha256": "4a46585d34804dacc60bc4f8a55b3c437c43e1a06235aa557dc5ad15dc7bafd6",
       "source_repo": "local",
       "source_commit": "local",
       "source_path": "methodology/research-state.md",
@@ -1145,8 +1145,8 @@
     {
       "path": "methodology/search-governance.md",
       "kind": "methodology",
-      "size_bytes": 20435,
-      "sha256": "28a4ad0bf7937f80782c7b5386050f3f273d3a8f8d0fbe3efdff637cf590209a",
+      "size_bytes": 20272,
+      "sha256": "d5943a115e2392c4dfb9a5e515cfc5b18906d8e26308fbd7b52aecaf725cd6b3",
       "source_repo": "local",
       "source_commit": "local",
       "source_path": "methodology/search-governance.md",

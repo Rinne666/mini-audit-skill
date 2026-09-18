@@ -243,22 +243,17 @@ Each intent becomes two objects — a question and the intent that answers it:
   "schema_version": 1,
   "agent_id": "orchestrator",
   "phase": "L5",
-  "questions_add": [
+  "research_intents_add": [
     {
-      "key": "oq:governor:bp-003-prerequisite",
+      "key": "ri:bp-003-prerequisite",
       "question": "Can the blocker of BP-003 be broken: 'normal REST path only accepts integer arrays'?",
-      "priority": "P0",
-      "related_candidates": ["cand-031"],
-      "related_capabilities": ["CAP-002", "CAP-003"]
-    }
-  ],
-  "intents_add": [
-    {
-      "key": "intent:prerequisite-search:BP-003",
-      "question_ref": "oq:governor:bp-003-prerequisite",
       "strategy": "prerequisite-search",
       "priority": "P0",
-      "reason": "high-priority blocked path BP-003 keeps cand-031 out of the chain"
+      "reason": "high-priority blocked path BP-003 keeps cand-031 out of the chain",
+      "related": {
+        "candidates": ["cand-031"],
+        "capabilities": ["CAP-002", "CAP-003"]
+      }
     }
   ]
 }
@@ -266,10 +261,10 @@ Each intent becomes two objects — a question and the intent that answers it:
 
 Notes that save a rejected delta:
 
-* `question_ref` may be the **key** of a question created in the same delta —
-  forward references resolve before anything is written.
-* The `oq:governor:` prefix on the question key is not decoration; it is what
-  rule 2 of §4 matches on next round.
+* The merged form carries the question text + strategy + related refs on
+  the same row; there is no separate `intents_add` / `questions_add` pair
+  to keep in sync.
+* The `ri:` prefix is a key convention; the schema accepts any non-empty key.
 * An intent cannot carry `related_blocked_paths` — the schema does not have that
   field. The machine-traceable link to a blocked path lives **on the blocked
   path**: when a worker investigates one, record `attempt_refs` (or reopen it)
