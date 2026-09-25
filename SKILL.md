@@ -164,6 +164,16 @@ how multi-entry bugs (`$F` vs `$ACTION_*` reaching the same
 site". Coverage is verified by writing it down, not by reading
 more code.
 
+The list above (form fields, query params, ...) is illustrative,
+not exhaustive. The entry-point shape of a target is derived
+from the target's surface, not from this paragraph: signal
+handlers, IOCTL, file-descriptor events, IPC, environment
+variables, hardware interrupts, IPC queues, and similar
+non-HTTP ingress surfaces are first-class entry points on
+their respective targets. The principle - enumerate every
+attacker-controlled ingress before any one of them is verified
+- transfers; the named patterns do not.
+
 Deterministic procedure:
 
 1. **Build the chain table.** List every finding, primitive,
