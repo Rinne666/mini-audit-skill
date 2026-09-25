@@ -20,9 +20,10 @@ refactoring, or feature work.
 1. **How to frame the audit.** Define the target, the attacker,
    the highest-value capability, and the boundary the attacker
    starts from.
-2. **The four-stage loop.** Scope → Discover → Verify → Report.
-   The model moves between stages freely; the notes file does
-   not gate them.
+2. **The five-stage loop.** Scope → Discover → Verify →
+   Synthesize (chaining) → Report. The model moves between
+   stages freely; the notes file does not gate them, but
+   Synthesize must run at least once before Report.
 3. **How to propose and disprove vulnerability hypotheses.**
    Each hypothesis names its disproof. Run the experiment, do
    not keep guessing.
@@ -48,7 +49,7 @@ Stop when another round is unlikely to change the result.
 That sentence is the entire loop. Every other piece of this Skill
 serves it.
 
-## The four stages
+## The five stages
 
 The stages are cognitive, not gates. The model jumps between them
 as the audit demands — `Discover → Verify → Discover` is a normal
@@ -98,6 +99,45 @@ independent sub-agent to corroborate.
 
 A Verified Fact is a finding candidate, not yet a finding. The
 finding lives in `templates/finding.md` once Report starts.
+
+### Synthesize (chaining - mandatory before Report)
+
+Goal: pairwise-combine benign / LOW findings and unproven
+primitives into chains that cross a boundary no component
+crosses alone.
+
+This stage is **mandatory, not optional**: isolated primitives
+are how real high-link vulnerabilities hide. Run it once after
+the first Verify cycle, and again before Report when new
+Verified Facts landed.
+
+Deterministic procedure:
+
+1. **Build the chain table.** List every finding, primitive,
+   and weak control with: attacker prerequisite (auth / write
+   access / network position / config state). One row each,
+   no merging.
+2. **Precondition elimination.** For each row, search the
+   codebase for *another* primitive that grants that row's
+   prerequisite or relaxes its guard. A hit **upgrades** the
+   row, never downgrades.
+3. **Pairwise composition.** For each pair (A, B), ask: can A
+   supply what B requires, or remove what B guards?
+   Specifically test: A writes what B deserializes; A degrades
+   what B trusts (cache / meta / session / config); A forges
+   what B authenticates.
+4. **Prove each hop.** Every hop in a surviving chain must
+   cite `file:line`. A hop that cannot be proven statically
+   is `NEEDS-RUNTIME` for the whole chain - the chain is
+   never reported at the strength of its weakest proven hop.
+5. **Score the delta.** The chain's severity is the permission
+   delta between the attacker's starting boundary and the
+   chain's end capability - never the sum of the individual
+   severities.
+
+A chain that survives is a finding candidate like any other;
+a chain that dies is recorded as a disproven hypothesis with
+the hop that killed it.
 
 ### Report
 
@@ -220,3 +260,35 @@ silence.
 - It does not write architecture-eval tests. The audit is
   measured by the findings it produces, not by whether the
   implementation of the audit was correct.
+
+### Hard Gate: Synthesize stage cannot be skipped
+
+Report stage cannot start until the audit notes file contains
+a non-empty pairing table. The table is:
+
+- rows = every cross-trust-boundary callback API (plugin /
+  event / template-registered callback whose return value or
+  write is persisted); AND
+- rows = every dangerous sink (`unserialize`, `include`,
+  `eval`, file-write, permission-decision).
+
+Pairing rule: when the framework opens callbacks to third-party
+code AND the persisted product is later deserialized /
+included / eval-ed, that pair **must** appear in the table.
+The model records each pair as `upgraded` (per-hop `file:line`
+proof) or `DISPROVED` (with the hop that killed it). It is not
+permitted to leave the pair out because "the bundled component
+happens to be clean" - that is the audit failure the Hard Gate
+exists to prevent.
+
+This is a Markdown protocol, not a Runtime gate. The model is
+expected to write the table and refuse to start Report without
+it. The reviewer verifies it by reading. The evaluation layer
+confirms it by regression (the audit must be re-runnable and
+produce the same chain table for the same target).
+
+This Hard Gate was added in v3.0.x after the DokuWiki 2026-07-
+14a audit produced CVE-class findings (Issue #4752, CWE-502)
+that the original four-stage loop missed. The miss was caused
+by skipping chain synthesis; the Hard Gate prevents the next
+miss.
