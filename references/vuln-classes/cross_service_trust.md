@@ -59,3 +59,12 @@ The delta is the same as the authz delta, but the threat model
 is different: the attacker is not a user, they are a
 compromised service. Severity follows the cross-tenant or
 cross-service impact, not the technical primitive.
+
+## Audit-process link
+
+The cross-service trust pattern (header writer x downstream
+trust consumer) is one of the three mandatory pairings in
+the Synthesize Hard Gate of `SKILL.md`. When the audit finds
+an internal service setting a header or accepting an internal
+credential, the cross-service pair must be entered into the
+chain table or DISPROVED before Report can start.

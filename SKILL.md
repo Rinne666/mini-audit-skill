@@ -264,22 +264,46 @@ silence.
 ### Hard Gate: Synthesize stage cannot be skipped
 
 Report stage cannot start until the audit notes file contains
-a non-empty pairing table. The table is:
+a non-empty pairing table. Every row pairs a **trust-source**
+with a **trust-consumer**:
 
-- rows = every cross-trust-boundary callback API (plugin /
-  event / template-registered callback whose return value or
-  write is persisted); AND
-- rows = every dangerous sink (`unserialize`, `include`,
-  `eval`, file-write, permission-decision).
+```text
+trust-source    : some component produces / writes / trusts value X
+trust-consumer  : some component reads / consumes X but lacks a
+                  fresh authorization check on X
+attacker reach  : attacker can drive X from trust-source to
+                  trust-consumer
+```
 
-Pairing rule: when the framework opens callbacks to third-party
-code AND the persisted product is later deserialized /
-included / eval-ed, that pair **must** appear in the table.
-The model records each pair as `upgraded` (per-hop `file:line`
-proof) or `DISPROVED` (with the hop that killed it). It is not
-permitted to leave the pair out because "the bundled component
-happens to be clean" - that is the audit failure the Hard Gate
-exists to prevent.
+Three pairings are mandatory whenever they exist in the target.
+Each pair is the abstract pattern of a specific vulnerability
+class; the per-class reference has the detailed methodology.
+
+1. **callback x dangerous sink.** A plugin / event / template
+   callback returns a value (or has its return persisted); a
+   `unserialize` / `include` / `eval` / file-write /
+   permission-decision sink later consumes that value. See
+   `references/vuln-classes/deserialization.md` and
+   `references/vuln-classes/injection.md`.
+
+2. **state write x cross-endpoint state consumer.** Endpoint
+   A writes state under A's authorization; endpoint B reads
+   that state and acts on it without re-checking
+   authorization. See `references/vuln-classes/authz.md` and
+   `references/discovery.md` (Trace across endpoints).
+
+3. **cross-service trust header x downstream consumer.** An
+   internal service sets a header (`X-User-Id`,
+   `X-Tenant-Id`, internal API key, internal JWT); a
+   downstream service honors that header without independent
+   verification. See
+   `references/vuln-classes/cross_service_trust.md`.
+
+Each row is recorded as `upgraded` (per-hop `file:line`
+proof) or `DISPROVED` (with the hop that killed it). "The
+bundled component happens to be clean" is not a permitted
+escape - that is the audit failure the Hard Gate exists to
+prevent.
 
 This is a Markdown protocol, not a Runtime gate. The model is
 expected to write the table and refuse to start Report without

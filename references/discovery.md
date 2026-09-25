@@ -117,6 +117,14 @@ state-machine, and cross-endpoint authz classes.
 > readers; every security-relevant read should trigger a search for
 > its writers.
 
+The Synthesize Hard Gate in `SKILL.md` instantiates this
+principle at the audit-process level: any state-write /
+state-consumer pair discovered by the reverse-consumer search
+must be entered into the chain table or DISPROVED before
+Report can start. This reference is the methodology; the Hard
+Gate is the audit-side obligation that the methodology is
+actually used.
+
 ## Read for what is missing
 
 A code review that only reads present code finds present bugs.
