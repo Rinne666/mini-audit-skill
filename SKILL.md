@@ -97,6 +97,48 @@ Failure to disprove alone is not proof. If the disproof holds,
 delete the hypothesis. When the experiment is structural, ask an
 independent sub-agent to corroborate.
 
+**Guard rule**: every claimed *guard* ("the id is validated",
+"the manifest restricts lookups", "this path is dev-only") must be
+verified with the same `file:line` evidence standard as a hop.
+An unverified guard is a hypothesis, not a fact — asserting one
+without reading the guard's implementation is how false negatives
+are manufactured. When a grep returns empty, suspect the pattern
+before concluding absence; retry with a broader pattern.
+(Added 2026-09-25 after a scan that found a chain's skeleton but
+asserted a manifest guard that did not exist, downgrading a
+CRITICAL RCE to "design boundary" until re-examined.)
+
+**Absence recheck.** "X does not exist" is itself a claim that
+requires evidence. A grep that returns empty is a query-failure
+signal first, an absence signal second. Before writing "X is
+absent" or "no such call site", retry with a broader pattern,
+an alt path syntax, or a different tool. Two empty greps with
+two independent patterns support absence; one does not.
+(Added 2026-09-25 after a scan whose Flow-syntax literal `case
+'F':` was missed by a single-pattern grep and treated as
+absent, hiding a `decodeReply` entry to the same primitive
+that `decodeAction` walked.)
+
+**Coverage rule.** Reaching a primitive from one attacker-
+controlled entry point does not exhaust the primitive. Every
+protocol marker that can deliver payload to the same primitive
+must be enumerated before any of them is verified. Uncovered
+entries are not absent; they are `NEEDS-RUNTIME`. A primitive's
+chain table is incomplete while any of its known protocol
+entries has no entry in that table. (Added 2026-09-25 after a
+scan verified only the `$ACTION_*` form-field path of
+`loadServerReference` and missed the `$F` reply-model path
+that reached the same primitive.)
+
+**Downgrade symmetry.** Lowering a severity rating requires
+evidence at the same strength as raising one. "We have end-
+to-end proof of the chain but it is just an app-layer issue"
+must cite `file:line` for the application-layer enforcement
+*and* an unblock condition that survives the audit. Severity
+is not a one-way street. (Added 2026-09-25 after a scan
+downgraded a CRITICAL RCE to "design boundary" on a single
+unverified guard.)
+
 A Verified Fact is a finding candidate, not yet a finding. The
 finding lives in `templates/finding.md` once Report starts.
 
@@ -110,6 +152,17 @@ This stage is **mandatory, not optional**: isolated primitives
 are how real high-link vulnerabilities hide. Run it once after
 the first Verify cycle, and again before Report when new
 Verified Facts landed.
+
+**Entry-point census (before Verify on any attacker-controlled
+primitive).** Identify every protocol-level entry point that
+reaches the primitive: form fields, query params, headers,
+redirects, event handlers, template includes, sub-protocol
+markers ($X, $Y, type codes), RPC fields. Walk each one before
+declaring the primitive exhausted. Single-entry verification is
+how multi-entry bugs (`$F` vs `$ACTION_*` reaching the same
+`loadServerReference`) get downgraded to "single known call
+site". Coverage is verified by writing it down, not by reading
+more code.
 
 Deterministic procedure:
 
@@ -164,6 +217,14 @@ deleted.
 A reviewer who reads the notes file from top to bottom should
 understand the entire audit. If they cannot, the notes are
 incomplete.
+
+The notes file must contain, for every dangerous primitive,
+a **Coverage paragraph**: the protocol entries that reach it
+(form field / reply marker / template include / event handler
+/ sub-protocol marker / RPC field) and the verification status
+of each (`verified` / `disproven` / `NEEDS-RUNTIME`). Coverage
+is the only way to prove the chain table is complete; the
+Coverage paragraph is how that proof is made inspectable.
 
 ## When to load a reference
 
@@ -246,6 +307,16 @@ Stop when one of:
 Do not stop because the model is uncertain. A hypothesis without
 new evidence is a hypothesis that needs more evidence, not
 silence.
+
+**Universal-negative guardrail.** Reports containing universal-
+negative conclusions ("no X in Y", "X is safe", "Y has no
+independent vulnerability") must carry an explicit
+unverified-guards list. A summary line of that form, written
+while any guard in the chain table is unverified, is itself a
+false negative. (Added 2026-09-25 after a scan wrote "no
+independent upgradeable React library vulnerability" while a
+manifest guard on `resolveServerReference` had never been
+read.)
 
 ## What this Skill does not do
 
