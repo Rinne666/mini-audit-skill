@@ -1,0 +1,24 @@
+{
+  "_comment": "Skill file fingerprint manifest. Used by runtime/check_skill_loaded.py to verify that the version of SKILL.md / references / templates currently in the agent context matches HEAD of the skill repo. Updated by `python runtime/check_skill_loaded.py --refresh`. See SKILL.md session-start rule.",
+  "files": {
+    "README.md": "3cc3078a2a6ff3149acb90681b388d147a9239cdfab4a055f3fed51975b0de3c",
+    "SKILL.md": "f5792947ada44677c67cdcd11c8503c6295ea142b7310d8fab2e57efb90eebfc",
+    "references/discovery.md": "6ac91d40c0c64f305b3eaa3020076d459a01a6de9000dbb975be023a15f33983",
+    "references/permission-delta.md": "46b241cc4ce81e28de282851d0a8ddaa378d44c44b31fe270b87f14b9ec41cc1",
+    "references/search-strategy.md": "d542c63e727c68325660c80be4c12ab0d7a27066114a1e7111d8452779e038dc",
+    "references/verification.md": "6b41718399773681c387a5248c54678a77231e7c0ebdf11ba47adbe2f4226f3c",
+    "references/vuln-classes/authz.md": "61d55d27497f2e3a809b44bd6c0c98d34ecdd13a25bd7129f2ed2f3222f57893",
+    "references/vuln-classes/cross_service_trust.md": "98f8d923555b9ff15f5c8e9a22ac4a59f13ab2d130d269ebb8b6671bc2c5f4ef",
+    "references/vuln-classes/crypto.md": "a4efa0d2772a11acd5a6a239a79be0335448244927515ad5855994177a9517c1",
+    "references/vuln-classes/deserialization.md": "a647fd54081731044425b95e9d6f0d9842f0c50c04b65d322cf7519e25264692",
+    "references/vuln-classes/injection.md": "118443301992d29248327909c4a76145b874c652a89c1eec2d74347be53466f4",
+    "references/vuln-classes/path_traversal.md": "0adf9dae67fdab1810dd25f5cbd4a41e4642ca2bb0789520e6c4b64ab9d2534b",
+    "references/vuln-classes/race_condition.md": "12380ac0d971eda406e94aae64d1fcf82c4160683e0cab092133f859faff19c5",
+    "references/vuln-classes/ssrf.md": "69a1ab9a572c87450e31edc64114f3c90b99db337629f3c48eceb3a66b16c507",
+    "schemas/pairing-table.schema.json": "bc435561933da2a65a800aaa2bb3ab3e5f41cb0586c29f477064e056b2efe3ba",
+    "templates/audit-notes.md": "968c76c3476d6fff603cb636503173a621bb77a99f70a6babddbc956b71e4ec5",
+    "templates/finding.md": "1bc052656aa2d7bfb0a5535af08fbec13c8ddd095631ebe745b5a3c47ba92a07"
+  },
+  "generated_at_unix": 1790416542,
+  "schema_version": 1
+}
