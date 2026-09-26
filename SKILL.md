@@ -15,6 +15,28 @@ review, a threat model, a code review with security focus, or
 "is this exploitable?". Do not load for general code review,
 refactoring, or feature work.
 
+## Session-start check (Runtime enforcement)
+
+Before the audit starts, the Harness should run:
+
+```text
+python runtime/check_skill_loaded.py
+```
+
+Exit 0 means the SKILL.md / references / templates / schemas
+in the current context match HEAD of this repo. Exit non-zero
+means the agent is reasoning over a stale or partial skill;
+the audit is at risk of the React 19 long-chain failure mode
+(post-mortem 2026-09-25, second failure mode: "session did
+not load the revised skill"). The script is stdlib-only and
+takes milliseconds.
+
+The check uses `runtime/skill_manifest.json`. After editing
+any tracked file, run with `--refresh` to recompute hashes.
+The list of tracked files is in `runtime/__init__.py`'s
+docstring; the manifest covers every file the agent must
+have in context to audit correctly.
+
 ## The five things this Skill teaches
 
 1. **How to frame the audit.** Define the target, the attacker,
@@ -333,7 +355,17 @@ read.)
 - It does not maintain a Search Ledger, an Attack Graph, or a
   Coverage Ledger. Those were the v2.x design and were
   removed in the v3.0 collapse.
-- It does not provide a CLI, a sandbox, or any runtime.
+- It does not provide a CLI, a sandbox, or the v2.x audit
+  Runtime (L1-L7 phase catalog, search ledger, attack graph,
+  scheduler, phase gates). What it does provide is three
+  Runtime-side enforcement primitives that close the two
+  failure modes identified in the 2026-09-25 React 19 long-
+  chain post-mortem: `runtime/validate_notes.py` checks the
+  pairing-table schema at write-time; `runtime/check_skill_
+  loaded.py` checks the session-start load; `runtime/
+  regression.py` runs the two against every fixture.
+  Stdlib-only. ~310 lines total. None of them is the v2.x
+  Runtime.
 - It does not enforce phases, gates, transitions, or
   approvals. The reviewer enforces discipline.
 - It does not own IDs, schemas, transactions, or generators.
@@ -386,11 +418,20 @@ bundled component happens to be clean" is not a permitted
 escape - that is the audit failure the Hard Gate exists to
 prevent.
 
-This is a Markdown protocol, not a Runtime gate. The model is
-expected to write the table and refuse to start Report without
-it. The reviewer verifies it by reading. The evaluation layer
-confirms it by regression (the audit must be re-runnable and
-produce the same chain table for the same target).
+The pairing table is enforced at the audit-output level by
+`runtime/validate_notes.py`, which validates the table against
+`schemas/pairing-table.schema.json` and checks the Coverage
+paragraph marker. Exit 0 means the format is correct;
+non-zero means Report cannot start. The model is expected to
+write the table; the validator catches missing or malformed
+ones. The reviewer judges correctness; the validator is the
+gate.
+
+For end-to-end verification across sessions, `runtime/regression.py`
+runs validate-notes and check-skill-loaded against every
+fixture in `fixtures/`. A regression failure means the
+framework's expected output has drifted and the audit prompt
+is operating against a wrong target shape.
 
 This Hard Gate was added in v3.0.x after the DokuWiki 2026-07-
 14a audit produced CVE-class findings (Issue #4752, CWE-502)

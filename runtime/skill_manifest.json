@@ -2,7 +2,7 @@
   "_comment": "Skill file fingerprint manifest. Used by runtime/check_skill_loaded.py to verify that the version of SKILL.md / references / templates currently in the agent context matches HEAD of the skill repo. Updated by `python runtime/check_skill_loaded.py --refresh`. See SKILL.md session-start rule.",
   "files": {
     "README.md": "3cc3078a2a6ff3149acb90681b388d147a9239cdfab4a055f3fed51975b0de3c",
-    "SKILL.md": "f5792947ada44677c67cdcd11c8503c6295ea142b7310d8fab2e57efb90eebfc",
+    "SKILL.md": "c91c7303a24d647c9954734761e213395d4db1e2dd6c46574d17fd0fc93ff7f4",
     "references/discovery.md": "6ac91d40c0c64f305b3eaa3020076d459a01a6de9000dbb975be023a15f33983",
     "references/permission-delta.md": "46b241cc4ce81e28de282851d0a8ddaa378d44c44b31fe270b87f14b9ec41cc1",
     "references/search-strategy.md": "d542c63e727c68325660c80be4c12ab0d7a27066114a1e7111d8452779e038dc",
@@ -19,6 +19,6 @@
     "templates/audit-notes.md": "968c76c3476d6fff603cb636503173a621bb77a99f70a6babddbc956b71e4ec5",
     "templates/finding.md": "1bc052656aa2d7bfb0a5535af08fbec13c8ddd095631ebe745b5a3c47ba92a07"
   },
-  "generated_at_unix": 1790416542,
+  "generated_at_unix": 1790416641,
   "schema_version": 1
 }
