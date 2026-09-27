@@ -1,12 +1,18 @@
+---
+name: mini-audit
+description: Use for security audits, vulnerability reviews, and security-focused code reviews of source repositories. Builds source-derived coverage units, requires independent omission reviews and candidate verification, and reports unresolved scope as incomplete.
+---
+
 # mini-audit
 
 A prompt-led Skill for security audits. The model reasons; the
 Harness executes; this Skill is the playbook the model follows.
 
 The audit state lives in **one Markdown file** that the model edits
-every round (`templates/audit-notes.md`). The runtime checks validate
-output structure and skill freshness; the evidence helper captures
-bounded source reads and searches. None proves semantic completeness.
+every round (`templates/audit-notes.md`). Runtime checks validate the
+coverage and review records and skill freshness; helpers capture bounded
+source reads/searches and generate stable coverage IDs. None proves semantic
+completeness.
 
 ## When to load this Skill
 
@@ -23,8 +29,8 @@ Before the audit starts, the Harness should run:
 python runtime/check_skill_loaded.py
 ```
 
-Exit 0 means the SKILL.md / references / templates / schemas
-in the current context match HEAD of this repo. Exit non-zero
+Exit 0 means the SKILL.md / references / templates / schemas / required
+audit helpers match HEAD of this repo. Exit non-zero
 means the agent is reasoning over a stale or partial skill;
 the audit is at risk of the React 19 long-chain failure mode
 (post-mortem 2026-09-25, second failure mode: "session did
@@ -34,8 +40,8 @@ takes milliseconds.
 The check uses `runtime/skill_manifest.json`. After editing
 any tracked file, run with `--refresh` to recompute hashes.
 The list of tracked files is in `runtime/skill_manifest.json`;
-it covers every instruction, reference, template, and schema file
-the agent must have in context to audit correctly.
+it covers every instruction, reference, template, schema, and required
+audit helper the agent must use to audit correctly.
 
 ## The five things this Skill teaches
 
@@ -126,19 +132,30 @@ behavior, documentation, or upstream fixes as `[prior]`; do not use
 them to disprove a hypothesis until verified against the target or
 an authoritative source.
 
-**Attention budget.** Before deep dives, assign one bounded coverage
-pass to each baseline lens. After those passes, rank the work queue by
-potential permission delta, attacker reachability, and uncertainty.
-At the start of each work cycle, select one queue item and make it the
-only active task. Define its next action, budget unit, and stop condition
-before using tools. Finish or explicitly defer it before selecting another.
-Record tangents as queued items with a one-line impact reason; do not follow
-them immediately. Reserve a final pass for challenging `N/A`, `DISPROVED`,
-and high-impact guard conclusions; use that reserve for a new branch only
-when evidence reveals a materially higher-impact surface. Before Report,
-every item must be `completed` or `deferred`; a deferred item needs a reason
-and a visible coverage limitation. If a time or token limit prevents a pass,
-record `NOT_CHECKED` and the limitation instead of marking it `N/A`.
+**Attention and budget control.** Before hunting, set a hard budget in
+`budget` and reserve capacity for at least one independent coverage critic
+and candidate verification. Turn the source-derived attack-surface map into
+`coverage_units`, one per material combination of surface, trust boundary,
+subsystem, attack class, and (when relevant) lifecycle. Generate each stable
+ID with `python runtime/coverage_id.py`; IDs exclude line numbers, ownership,
+wave, and status so source movement does not silently create new work.
+
+At the start of a work cycle, select one coverage unit and make it the only
+active unit. Its task, owner, wave, budget unit, paths, and stop condition
+must be written before tool use. Finish or explicitly defer that unit before
+switching. Record newly discovered surfaces as new units in a later wave;
+do not let a tangent replace the active unit. After every hunter wave, a
+separate cold-start critic checks the current source inventory for unmapped
+ingress, alternate protocol entries to known primitives, unchecked consumers,
+trust boundaries, and lifecycle paths. Every gap becomes a later-wave unit.
+A final independent clean review covers every current unit. If the Harness
+cannot provide a separate reviewer, record the self-review as non-independent
+and set `run_status: incomplete`.
+
+When the budget is exhausted, stop hunting, preserve unfinished units as
+`deferred` or `blocked`, state the remaining scope in `incomplete_reasons`,
+and do not claim complete coverage. Prior runs can seed hypotheses but do not
+count as current-source coverage; re-map and re-review the checked-out target.
 
 End Scope when the **Objective** and **Attack Surface** sections
 of the notes file are written, the highest-value target is named,
@@ -159,10 +176,11 @@ disproof is named alongside.
 Balance sink-driven searches with the baseline authorization and
 trust-decision lenses. Allocate deep-dive effort by potential
 permission delta, reachability, and uncertainty, not by whether code
-looks central, admin-only, or easy to grep. Use the Work Queue in the
-notes: one active task, an explicit stop condition, and a recorded
-budget unit for each task. A new tangent enters the queue; it does not
-silently replace the active task. A release-note/CVE checklist is one
+looks central, admin-only, or easy to grep. Use the `coverage_units` ledger in
+the notes: one active unit, a source-derived scope, an explicit stop condition,
+and a recorded budget unit for each pass.
+A new tangent becomes a later-wave unit; it does not silently replace the
+active unit. A release-note/CVE checklist is one
 search strategy, not a scope boundary. Treat security-related `TODO`,
 `FIXME`, and `XXX` comments as review signals, not completed analysis.
 
@@ -323,12 +341,11 @@ default.
 Copy `templates/audit-notes.md` into the audit workspace, rename
 it (e.g. `notes-{target}.md`), and edit it every round.
 
-The notes file is the entire canonical state of this audit. A small
-schema applies to the machine-readable pairing and coverage ledgers;
-other sections evolve as the audit evolves — the model is allowed to add new
-sections when needed (e.g. a "Chain hypothesis" section when a
-chain search is running). A section the audit no longer needs is
-deleted.
+The notes file is the entire canonical state of this audit. The machine-
+readable pairing, coverage-unit, coverage-review, candidate-review, budget,
+and run-status records are governed by `schemas/pairing-table.schema.json`;
+other sections can evolve with the audit. Keep the prose and records
+consistent. A section the audit no longer needs can be deleted.
 
 A reviewer who reads the notes file from top to bottom should
 understand the entire audit. If they cannot, the notes are
@@ -336,11 +353,12 @@ incomplete.
 
 The notes file must contain, for every dangerous primitive,
 a **Coverage paragraph**: the protocol entries that reach it
-(form field / reply marker / template include / event handler
-/ sub-protocol marker / RPC field) and the verification status
-of each (`verified` / `disproven` / `NEEDS-RUNTIME`). Coverage makes
-the entry inventory inspectable; it is evidence to review, not proof
-that every entry has been found.
+(form field / reply marker / template include / event handler /
+sub-protocol marker / RPC field) and the verification status of each
+(`verified` / `disproven` / `NEEDS-RUNTIME`), linked to its coverage-unit ID.
+The ledger also names each unit's source refs, owner, wave, paths reviewed,
+outcome, and evidence. This makes omissions inspectable; it does not prove
+every entry was found.
 
 ## When to load a reference
 
@@ -422,11 +440,10 @@ Do not stop solely because Remaining Questions is empty, because
 the model feels saturated, or because another round seems unlikely
 to add a finding. Before Report, close the following checklist:
 
-- All four baseline categories have an explicit status. `HUNTED` needs a
-  captured source read; `N/A` needs a reason and two distinct zero-match
-  searches. `NOT_CHECKED`, `IN_PROGRESS`, and `NEEDS-RUNTIME` may remain only
-  as explicit coverage limitations; do not claim complete or safe coverage
-  while any remain.
+- All four baseline categories have an explicit status and corresponding
+  coverage units. `HUNTED` units cite captured source reads; `N/A` units need
+  a reason and two distinct zero-match searches. `NOT_CHECKED`, `IN_PROGRESS`,
+  and `NEEDS-RUNTIME` make the run incomplete.
 - Every identified dangerous sink and security decision point has
   an entry/producer inventory, relevant consumers, and a status.
 - Every claimed guard has a Guard Evaluation Ledger row with the
@@ -437,16 +454,19 @@ to add a finding. Before Report, close the following checklist:
 - Configuration-dependent chains record the default state and at
   least one supported/common deployment state; a disabled-by-default
   feature is not itself a disproof.
-- A final review searches for unverified `[prior]` claims and
-  universal negatives, and challenges each `N/A` and `DISPROVED`
-  row. Use an independent cold-start reviewer when available; if
-  unavailable, do a separate pass from the notes and code, starting
-  from the missed-class lenses rather than existing findings.
-- The work queue has at least one task for each baseline category; no task
-  is `active` or `queued`. Completed tasks cite captured evidence; deferred
-  tasks state why they stopped and which coverage remains limited.
-- A `final_review` task is completed after challenging the N/A, DISPROVED,
-  and high-impact guard conclusions.
+- A separate final cold-start reviewer challenges unverified `[prior]`
+  claims, universal negatives, each `N/A` and `DISPROVED` row, and every
+  coverage unit. Without an independent reviewer, record the limitation and
+  mark the run `incomplete`; a second self-review cannot satisfy this gate.
+- Every `coverage_units` entry has a canonical ID derived from its dimensions.
+  Before Report, no unit is `planned`, `in_progress`, `blocked`, `deferred`,
+  or `out_of_scope` in a run marked `complete`. Deferred units state the
+  reason and remaining limitation.
+- Every candidate ID linked from a unit has an independent verifier record.
+  `needs_validation` candidates remain unresolved and force `incomplete`.
+- `budget.spent_units` does not exceed the declared maximum. A complete run
+  has a clean final coverage review, terminal candidate dispositions, no open
+  units, and an empty `incomplete_reasons` list.
 
 After this checklist closes, stop when additional work produces no
 new reachable capability delta. Record remaining uncertainty as
@@ -466,24 +486,24 @@ read.)
 
 ## What this Skill does not do
 
-- It does not maintain a Search Ledger, an Attack Graph, or a
-  Coverage Ledger. Those were the v2.x design and were
-  removed in the v3.0 collapse.
+- It maintains a lightweight coverage-unit ledger and review records in the
+  notes file. It does not maintain a general-purpose Search Ledger or Attack
+  Graph, and it does not prove semantic completeness.
 - It does not provide a sandbox or the v2.x audit Runtime
   (L1-L7 phase catalog, search ledger, attack graph, scheduler,
   phase gates). It provides three lightweight runtime checks and one
-  bounded evidence-capture helper:
-  `runtime/validate_notes.py` checks pairing-table and ledger
-  structure; `runtime/check_skill_loaded.py` checks the session-start
-  load; `runtime/regression.py` checks fixtures. The validator checks
-  work-queue closure, cited evidence artifacts, and selected ledger
-  invariants. The logger records only reads and searches made through it;
+  bounded evidence-capture and coverage-ID helpers:
+  `runtime/validate_notes.py` checks pairing, coverage-unit identity and
+  closure, review independence declarations, candidate dispositions, run
+  status, budget bounds, cited evidence artifacts, and selected ledger
+  invariants; `runtime/check_skill_loaded.py` checks the session-start load;
+  `runtime/regression.py` checks fixtures. `runtime/evidence_log.py` records only reads and searches made through it; `runtime/coverage_id.py` generates stable unit IDs;
   neither can prevent other tools from being used or prove the inventory
   is complete.
   A structurally valid notes file is not a validated security
   conclusion.
 - It does not enforce phases or control which tool the model uses.
-  The queue and evidence checks make omissions visible at the Report gate;
+  The unit and evidence checks make omissions visible at the Report gate;
   the reviewer still enforces semantic discipline.
 - It does not own workflow state in a database. The notes file is the
   canonical audit state; the evidence ledger stores captured outputs and
@@ -494,10 +514,13 @@ read.)
 
 ### Hard Gate: Synthesize stage cannot be skipped
 
-Report stage cannot start until the audit notes file contains a
-pairing table, a class-coverage ledger, a closed work queue with a completed
-`final_review` task, and a Guard Evaluation Ledger. Every pairing row
-connects a **trust-source** with a **trust-consumer**:
+Report stage cannot start until the audit notes file contains a pairing table,
+the four baseline roll-ups, source-derived coverage units, a post-wave critic
+record for every wave, a final-clean coverage review, candidate review records
+for all candidate IDs, a budget record, and a Guard Evaluation Ledger. If any
+completion condition is unavailable, report `incomplete` with the specific
+coverage limitation instead of presenting the audit as complete. Every pairing
+row connects a **trust-source** with a **trust-consumer**:
 
 ```text
 trust-source    : some component produces / writes / trusts value X
@@ -569,8 +592,10 @@ python runtime/validate_notes.py path/to/notes.md --evidence-ledger path/to/evid
 ```
 
 The validator checks cited IDs and hashes, zero-match search results,
-captured reads for hunted categories and pairing rows, guard expressions
-against cited source reads, and work-queue closure. Exit 0 means these
+captured reads for hunted categories, coverage-unit IDs and statuses, wave
+review coverage and declared reviewer separation, candidate dispositions,
+budget bounds, guard expressions against cited source reads, and the complete
+versus incomplete gate. Exit 0 means these
 structural requirements passed; it does not certify search truth or
 completeness. The logger sees only use through that helper, and its local
 files are not tamper-proof. The reviewer still challenges category
@@ -583,7 +608,9 @@ framework's expected output has drifted and the audit prompt
 is operating against a wrong target shape.
 
 This Hard Gate was added after the DokuWiki 2026-07-14a audit
-missed a cross-endpoint CWE-502 chain. Later FlaskBB, rsync, and
-GLPI audits showed that a non-empty table alone is insufficient:
-category coverage, guard semantics, and downgrade evidence also
-need explicit records and reviewer challenge.
+missed a cross-endpoint CWE-502 chain. Later FlaskBB, rsync, and GLPI audits
+showed that a non-empty table alone is insufficient. The coverage-unit and review gates were added after comparing
+Cloudflare's omission controls: dimensions-based coverage, critics after each
+wave, a clean final pass, explicit incomplete status, and independent
+candidate disposition. These checks improve traceability; they still cannot
+force the model to discover an unenumerated surface.

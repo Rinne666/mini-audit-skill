@@ -12,7 +12,8 @@ The script does NOT call an LLM. It validates that the
 canonical "correct audit output" for each fixture passes
 the two enforcement primitives already in this repo:
 
-  - validate-notes (pairing, coverage, work queue, and evidence artifacts)
+  - validate-notes (pairing, coverage units, reviews, candidate dispositions,
+    run status, budget, and evidence artifacts)
   - check-skill-loaded (file-fingerprint manifest)
 
 What this proves: the format the audit must produce is

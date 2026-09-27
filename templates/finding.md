@@ -1,59 +1,61 @@
 # Finding — {slug}
 
-> One finding per file. Keep the file under one screen; findings that
-> need more room are usually evidence-thin.
+> Create a finding only for a `confirmed` candidate review. A
+> `needs_validation` candidate belongs in the report's limitations, not in the
+> confirmed findings list.
+
+## Candidate Review
+
+- Candidate ID:
+- Independent verifier ID:
+- Verdict: `confirmed`
+- Evidence IDs:
 
 ## Summary
 
-One sentence. The attacker's starting point, the precondition they
-needed, and the capability they ended up with.
+One sentence: attacker starting point, required precondition, and resulting
+capability.
 
 ## Severity
 
-`{critical | high | medium | low}` with one-line justification grounded
-in the consequence (data, integrity, availability, blast scope), not
-in the difficulty of exploitation.
+`{critical | high | medium | low}` with a one-line justification grounded in
+the consequence (data, integrity, availability, blast scope), not merely the
+difficulty of exploitation. Assign severity only after the candidate is
+confirmed and its preconditions are stated.
 
 ## Location
 
 - File / URL / endpoint the attacker reaches.
-- Line range or function that contains the bug.
-- Config, route, or schema entry that wires the entry point to the
-  vulnerable code.
+- Line range or function containing the bug.
+- Config, route, or schema entry wiring the entry point to the vulnerable code.
 
 ## Preconditions
 
 - Attacker state (network position, credentials, prior capability).
-- System state (config flag on, debug mode, deployment shape).
-- Default configuration impact and impact in supported/common deployments.
-- The exact condition that unlocks the chain; a non-default configuration
-  is a precondition to describe, not by itself a reason to dismiss the issue.
+- System state (config flag, debug mode, deployment shape).
+- Default behavior and impact in supported/common deployments.
+- Exact condition that unlocks the chain. A non-default configuration is a
+  precondition to describe, not by itself a reason to dismiss the issue.
 
 ## Attack path
 
-A walk through the code that an independent auditor could follow.
-Each step names a file path, line range, and the data value at that
-point. End at the consequence — what the attacker now controls.
+Walk the code so another auditor can reproduce it. Each step names a source
+path, line range, and the value at that point. End at the consequence.
 
 ## Evidence
 
-- The exact code or response that proves the bug. Quote it.
-- Runtime evidence is preferred when it materially reduces
-  uncertainty. A complete static proof is sufficient when
-  entry -> control -> sink -> consequence can be established
-  from code. A static proof has to actually be complete: the
-  attacker-controlled input must be traceable to the sink,
-  and the consequence must follow from the sink.
-- The negative control that would have disproved the bug, and why
-  it did not.
+- Exact code or response proving the bug.
+- Runtime evidence when it materially reduces uncertainty. Complete static
+  proof is sufficient when entry → control → sink → consequence follows from
+  source.
+- Strongest disproof attempt, and why it did not hold.
+- Independent verifier's source reads and conclusion.
 
 ## Why existing controls missed it
 
-One paragraph. Naming the missing control is what turns a bug report
-into a fix proposal.
+Explain which missing or ineffective control allowed the behavior.
 
 ## Remediation
 
-The smallest change that closes the gap. Note any change that would
-not close it (sanitizers that do not sanitize, allowlists that allow
-the bypass).
+The smallest change that closes the gap. Note any change that would not close
+it (for example, a sanitizer that does not sanitize the dangerous form).

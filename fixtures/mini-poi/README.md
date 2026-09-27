@@ -22,10 +22,12 @@ remote code execution.
 
 The expected output lives in `expected/`:
 
-- `expected/notes.md` — audit notes with a pairing table, class-coverage
-  ledger, evidence IDs, and a closed work queue.
-- `expected/finding.md` — the conditional finding with attacker-control and
-  gadget assumptions stated.
+- `expected/notes.md` — audit notes with a pairing table, source-derived
+  coverage units, independent review records, baseline roll-ups, evidence IDs,
+  and an explicit incomplete status for unresolved deployment preconditions.
+- `expected/finding.md` — a conditional candidate draft with unresolved
+  attacker-control and gadget assumptions. It is explicitly not a confirmed
+  finding because the independent verifier records `needs_validation`.
 - `expected/evidence.jsonl` and `expected/evidence/` — fixture-only captured
   reads and empty searches used to exercise evidence-reference checks.
 

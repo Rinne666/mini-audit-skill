@@ -1,7 +1,18 @@
-# Finding — unsafe deserialization across the plugin cache boundary
+# Candidate — unsafe deserialization across the plugin cache boundary
 
 > Reference finding for the mini-poi fixture. It demonstrates a conditional
 > object-injection path, not a complete remote-code-execution exploit.
+
+## Candidate Review
+
+- Candidate ID: `C1`
+- Independent verifier ID: `candidate-verifier-1`
+- Verdict: `needs_validation`
+- Evidence IDs: `E000001`, `E000002`
+- The object-instantiation sink behavior is source-confirmed under the stated
+  input shape. Attacker control of a plugin implementation and a usable loaded
+  gadget are not established by this fixture. This document is a conditional
+  review draft; it must not be counted as a confirmed finding.
 
 ## Summary
 
