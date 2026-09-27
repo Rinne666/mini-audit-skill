@@ -31,6 +31,12 @@ flows through a cache write in `mini_poi_store_cache()` and a later read in
 All four baseline categories have an explicit status. The two N/A conclusions
 are limited to this small fixture and cite captured zero-match searches.
 
+## Business Process Security Review
+
+N/A: the scoped fixture has no security-sensitive business workflow. Two
+distinct captured searches cover financial/approval/account workflows and
+replay/retry/state-transition terms (`E000007`, `E000008`).
+
 ## Coverage Units and Reviews
 
 The four baseline dimensions produce four stable coverage units. Each unit names
@@ -163,6 +169,24 @@ The captured call at `fixtures/mini-poi/index.php:49` has no class restriction.
       ]
     }
   ],
+  "business_logic_review": {
+    "status": "N/A",
+    "strategy": "Search the complete fixture source inventory for security-sensitive business workflows, then confirm against the captured entry and persistence reads.",
+    "workflows": [],
+    "evidence_ids": [
+      "E000007",
+      "E000008"
+    ],
+    "absence_searches": [
+      {
+        "evidence_id": "E000007"
+      },
+      {
+        "evidence_id": "E000008"
+      }
+    ],
+    "reason": "The fixture exercises plugin-result caching and deserialization, but contains no workflow that changes authority, ownership, funds, quotas, approvals, security settings, or another protected business asset."
+  },
   "guard_checks": [
     {
       "protected_consumer": "Object deserialization in mini_poi_serve_page()",

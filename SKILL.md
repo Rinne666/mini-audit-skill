@@ -113,6 +113,12 @@ decision lenses, even if the user named a different bug class:
 - **Callbacks and dangerous consumers:** can plugin, event, template,
   or callback output reach deserialization, code execution, file,
   permission, or other security-sensitive consumers?
+- **Security-sensitive business processes:** which workflows change
+  authorization, ownership, identity, funds/credits, quotas, approvals,
+  account/security settings, or other protected assets? Identify their
+  actors, states, transition entry points, and consequential side effects.
+  Use `references/business-logic.md` for the workflow review; do not infer
+  undocumented product policy as fact.
 
 Put each lens in the notes file as `NOT_CHECKED`, `IN_PROGRESS`,
 `HUNTED`, `N/A`, or `NEEDS-RUNTIME`, with the strategy and evidence.
@@ -132,13 +138,22 @@ behavior, documentation, or upstream fixes as `[prior]`; do not use
 them to disprove a hypothesis until verified against the target or
 an authoritative source.
 
+The business-process review is required for every audit. If Scope finds a
+security-relevant workflow, load `references/business-logic.md`, create a
+source-backed flow inventory, and add one or more `business_logic` coverage
+units for its transitions and abuse cases. If none applies, record a supported
+`N/A` disposition with two distinct captured zero-match searches; never infer
+absence from not noticing a workflow.
+
 **Attention and budget control.** Before hunting, set a hard budget in
 `budget` and reserve capacity for at least one independent coverage critic
 and candidate verification. Turn the source-derived attack-surface map into
 `coverage_units`, one per material combination of surface, trust boundary,
-subsystem, attack class, and (when relevant) lifecycle. Generate each stable
-ID with `python runtime/coverage_id.py`; IDs exclude line numbers, ownership,
-wave, and status so source movement does not silently create new work.
+subsystem, attack class, and (when relevant) lifecycle. A security-relevant
+business process gets `business_logic` units in addition to any distinct
+baseline units it touches. Generate each stable ID with
+`python runtime/coverage_id.py`; IDs exclude line numbers, ownership, wave,
+and status so source movement does not silently create new work.
 
 At the start of a work cycle, select one coverage unit and make it the only
 active unit. Its task, owner, wave, budget unit, paths, and stop condition
@@ -147,7 +162,10 @@ switching. Record newly discovered surfaces as new units in a later wave;
 do not let a tangent replace the active unit. After every hunter wave, a
 separate cold-start critic checks the current source inventory for unmapped
 ingress, alternate protocol entries to known primitives, unchecked consumers,
-trust boundaries, and lifecycle paths. Every gap becomes a later-wave unit.
+trust boundaries, lifecycle paths, and missing business-state transitions,
+alternate actors, retries, or recovery paths. Every gap becomes a later-wave
+unit. The critic also challenges each workflow's stated invariant against its
+source evidence, rather than treating a plausible product expectation as fact.
 A final independent clean review covers every current unit. If the Harness
 cannot provide a separate reviewer, record the self-review as non-independent
 and set `run_status: incomplete`.
@@ -159,9 +177,11 @@ count as current-source coverage; re-map and re-review the checked-out target.
 
 End Scope when the **Objective** and **Attack Surface** sections
 of the notes file are written, the highest-value target is named,
-and the baseline lenses have an evidence-backed initial status. The
-map covers the surface relevant to the objective and expands when
-later evidence reveals a new reachable boundary.
+the baseline lenses have an evidence-backed initial status, and
+`business_logic_review` is initialized with a workflow inventory or an
+explicit `IN_PROGRESS` / evidence-backed `N/A` status. The map covers the
+surface relevant to the objective and expands when later evidence reveals a
+new reachable boundary.
 
 ### Discover
 
@@ -169,9 +189,12 @@ Goal: a list of plausible hypotheses, each with a disproof
 condition.
 
 Read code. Trace data flow. Read references when needed. Ask a
-sub-agent for parallel variant or chain searches. Add entries to
-the **Hypotheses** section, one per hypothesis, written so the
-disproof is named alongside.
+sub-agent for parallel variant or chain searches. For each inventoried
+security-sensitive business process, trace state transitions and side effects
+in both directions, then check relevant authorization, replay/idempotency,
+concurrency, failure/recovery, quantity, and lifecycle cases from
+`references/business-logic.md`. Add entries to the **Hypotheses** section,
+one per hypothesis, written so the disproof is named alongside.
 
 Balance sink-driven searches with the baseline authorization and
 trust-decision lenses. Allocate deep-dive effort by potential
@@ -362,12 +385,16 @@ every entry was found.
 
 ## When to load a reference
 
-The Skill ships four methodology references and eight vuln-class
+The Skill ships five methodology references and eight vuln-class
 references. Load them only when the model is about to do work the
 reference actually helps with.
 
 Methodology:
 
+- `references/business-logic.md` — during Scope and Discover when
+  the target has or may have security-sensitive business workflows;
+  use it to derive evidence-backed invariants and enumerate transition,
+  replay, concurrency, failure, and recovery abuse cases.
 - `references/discovery.md` — when the model is about to start
   Discovery and has not yet mapped the attack surface relevant
   to the objective.
@@ -446,6 +473,12 @@ to add a finding. Before Report, close the following checklist:
   and `NEEDS-RUNTIME` make the run incomplete.
 - Every identified dangerous sink and security decision point has
   an entry/producer inventory, relevant consumers, and a status.
+- `business_logic_review` is `REVIEWED` with every material workflow linked to
+  terminal `business_logic` coverage units, or is evidence-backed `N/A` with
+  two distinct captured zero-match searches. Every reviewed workflow records
+  its source-backed invariants, actors, transitions, failure/retry paths, and
+  checked abuse cases. An unchecked or unresolved review makes the run
+  incomplete.
 - Every claimed guard has a Guard Evaluation Ledger row with the
   exact expression, attacker input type, evaluated result, and
   protected consumer.
@@ -515,9 +548,10 @@ read.)
 ### Hard Gate: Synthesize stage cannot be skipped
 
 Report stage cannot start until the audit notes file contains a pairing table,
-the four baseline roll-ups, source-derived coverage units, a post-wave critic
-record for every wave, a final-clean coverage review, candidate review records
-for all candidate IDs, a budget record, and a Guard Evaluation Ledger. If any
+the four baseline roll-ups, a business-process security review, source-derived
+coverage units, a post-wave critic record for every wave, a final-clean
+coverage review, candidate review records for all candidate IDs, a budget
+record, and a Guard Evaluation Ledger. If any
 completion condition is unavailable, report `incomplete` with the specific
 coverage limitation instead of presenting the audit as complete. Every pairing
 row connects a **trust-source** with a **trust-consumer**:

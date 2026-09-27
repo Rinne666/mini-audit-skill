@@ -46,6 +46,19 @@ directory in the private audit workspace. Capture reads and searches with
 category with open units is not `HUNTED`. Use `NOT_CHECKED`, `IN_PROGRESS`, or
 `NEEDS-RUNTIME` when work remains; any such status makes the run incomplete.
 
+## Business Process Security Review
+
+Set the `business_logic_review` record in Synthesize JSON to `REVIEWED`,
+`N/A`, `IN_PROGRESS`, or `NOT_CHECKED`. For each security-relevant workflow,
+record source-backed actors, protected assets, invariants, state transitions,
+failure/retry cases, abuse cases checked, evidence IDs, and linked
+`business_logic` coverage-unit IDs. Keep the review focused on security
+consequences; do not turn undocumented product expectations into findings.
+
+`N/A` requires a reason and two distinct captured zero-match searches over the
+scoped source inventory. Any unchecked or unresolved review makes the run
+incomplete. Load `references/business-logic.md` for the workflow method.
+
 ## Coverage Units
 
 The `coverage_units` array in the Synthesize JSON below is the single source of
@@ -58,6 +71,11 @@ combination of:
 - baseline or target-specific attack class; and
 - lifecycle stage when it changes the security behavior (for example,
   request-to-request persistence or startup-to-runtime).
+
+For each material security-sensitive business workflow, add a target-specific
+unit with `dimensions.attack_class: "business_logic"`; link it from the
+corresponding flow in `business_logic_review`. Keep distinct authorization or
+cross-endpoint units when they cover different code paths.
 
 Generate `coverage_id` with `python runtime/coverage_id.py`, passing those
 canonical dimensions. IDs must not include line numbers, reviewer, owner, wave,
@@ -74,9 +92,10 @@ parallel path becomes a unit in a later wave. Close units as `covered`,
 
 After every hunter wave, a separate cold-start reviewer reads the current
 source and challenges the unit inventory: unmapped ingress, alternate protocol
-entries to known primitives, unchecked consumers, missing lifecycle paths, and
-unsupported exclusions. A gap must be added as a later-wave unit and reviewed
-in that wave. Mark each review's `independent` field explicitly. The
+entries to known primitives, unchecked consumers, missing lifecycle paths,
+missing workflow transitions, alternate actors, retries, and recovery paths,
+and unsupported exclusions. A gap must be added as a later-wave unit and
+reviewed in that wave. Mark each review's `independent` field explicitly. The
 `final_clean` reviewer must cover every current unit and be different from
 every unit owner and independent post-wave critic. If no independent reviewer
 is available, record `independent: false` or omit that review and keep the run
@@ -141,6 +160,7 @@ these top-level records:
 
 - `rows`: discovered source-to-consumer trust pairings;
 - `class_coverage`: exactly the four baseline lens roll-ups;
+- `business_logic_review`: a reviewed workflow inventory or evidence-backed N/A;
 - `coverage_units`: the complete source-derived work and coverage map;
 - `coverage_reviews`: one post-wave review per wave and, for a complete run,
   one final-clean review;
@@ -161,8 +181,8 @@ keeps the overall run incomplete.
 ## How to use this file
 
 1. **Scope.** Write the objective and attack-surface map, set the hard budget,
-   create the four baseline roll-ups, and seed source-derived units. Generate
-   IDs with `runtime/coverage_id.py`.
+   create the four baseline roll-ups and business-process review record, and
+   seed source-derived units. Generate IDs with `runtime/coverage_id.py`.
 2. **Discover.** Work one unit at a time. Add hypotheses with explicit
    disproofs. Add newly found boundaries or alternate paths as later-wave
    units; preserve high-impact disproved hypotheses.
@@ -173,6 +193,7 @@ keeps the overall run incomplete.
    critics rereads the cited source and records the strongest disproof attempt.
 5. **Report.** Run `runtime/validate_notes.py`. A structurally valid ledger is
    not proof of semantic completeness. Report `complete` only when all units
-   are terminal, all candidates have terminal independent verdicts, the final
-   coverage review is clean, and budget and evidence gates pass. Otherwise
-   report `incomplete` with concrete limitations.
+   are terminal, the business-process review is `REVIEWED` or evidenced `N/A`,
+   all candidates have terminal independent verdicts, the final coverage review
+   is clean, and budget and evidence gates pass. Otherwise report `incomplete`
+   with concrete limitations.

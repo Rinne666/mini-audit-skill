@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """validate-notes -- structural checks for audit notes.
 
-Validates trust pairings, baseline roll-ups, deterministic coverage units,
-independent coverage and candidate reviews, budget/run status, guard
-evaluations, and required Markdown sections.
+Validates trust pairings, baseline roll-ups, business-process workflow records,
+deterministic coverage units, independent coverage and candidate reviews,
+budget/run status, guard evaluations, and required Markdown sections.
 
 This is one of three enforcement primitives added after the
 React 19 long-chain false-negative incident (post-mortem
@@ -61,6 +61,10 @@ CLASS_COVERAGE_MARKERS = (
 GUARD_LEDGER_MARKERS = (
     re.compile(r"^##\s+Guard Evaluation Ledger\b", re.MULTILINE | re.IGNORECASE),
     re.compile(r"^###\s+Guard Evaluation Ledger\b", re.MULTILINE | re.IGNORECASE),
+)
+BUSINESS_LOGIC_MARKERS = (
+    re.compile(r"^##\s+Business\s+Process\s+Security\s+Review\b", re.MULTILINE | re.IGNORECASE),
+    re.compile(r"^###\s+Business\s+Process\s+Security\s+Review\b", re.MULTILINE | re.IGNORECASE),
 )
 REQUIRED_CATEGORIES = {
     "authz_sensitive_write",
@@ -632,6 +636,131 @@ def _validate_candidate_reviews(
     return errors, complete
 
 
+def _validate_business_logic_review(
+    value: object,
+    units: dict[str, dict],
+    evidence_records: dict[str, dict],
+) -> tuple[list[str], bool]:
+    """Validate the business-process inventory and its security coverage links."""
+    errors: list[str] = []
+    if not isinstance(value, dict):
+        return ["business_logic_review must be an object"], False
+
+    status = value.get("status")
+    if not isinstance(status, str) or status not in {"NOT_CHECKED", "IN_PROGRESS", "REVIEWED", "N/A"}:
+        errors.append("business_logic_review.status must be NOT_CHECKED / IN_PROGRESS / REVIEWED / N/A")
+    strategy = value.get("strategy")
+    if not isinstance(strategy, str) or not strategy.strip():
+        errors.append("business_logic_review.strategy must be non-empty")
+
+    evidence_ids = value.get("evidence_ids")
+    workflows = value.get("workflows")
+    business_unit_ids = {
+        coverage_id
+        for coverage_id, unit in units.items()
+        if isinstance(unit.get("dimensions"), dict)
+        and unit["dimensions"].get("attack_class") == "business_logic"
+    }
+
+    if status == "REVIEWED":
+        if not isinstance(workflows, list) or not workflows:
+            errors.append("business_logic_review REVIEWED requires at least one workflow")
+            workflows = []
+        if not _valid_evidence_ids(evidence_ids, evidence_records):
+            errors.append("business_logic_review REVIEWED requires existing evidence_ids")
+        elif not _cites_source_read(evidence_ids, evidence_records):
+            errors.append("business_logic_review REVIEWED must cite a captured source read")
+
+        seen_workflow_ids: set[str] = set()
+        linked_business_units: set[str] = set()
+        required_lists = (
+            "source_refs", "actors", "protected_assets", "invariants",
+            "transitions_reviewed", "failure_retry_cases",
+            "abuse_cases_checked",
+        )
+        for i, workflow in enumerate(workflows):
+            label = f"business_logic_review.workflows[{i}]"
+            if not isinstance(workflow, dict):
+                errors.append(f"{label} must be an object")
+                continue
+            workflow_id = workflow.get("workflow_id")
+            if not isinstance(workflow_id, str) or not re.fullmatch(r"BF[0-9]+", workflow_id):
+                errors.append(f"{label}.workflow_id must match BF<number>")
+            elif workflow_id in seen_workflow_ids:
+                errors.append(f"duplicate business workflow ID: {workflow_id}")
+            else:
+                seen_workflow_ids.add(workflow_id)
+            if not isinstance(workflow.get("name"), str) or not workflow["name"].strip():
+                errors.append(f"{label}.name must be non-empty")
+            for field in required_lists:
+                if not _nonempty_string_list(workflow.get(field)):
+                    errors.append(f"{label}.{field} must be a non-empty list")
+
+            flow_evidence = workflow.get("evidence_ids")
+            if not _valid_evidence_ids(flow_evidence, evidence_records):
+                errors.append(f"{label}.evidence_ids must cite existing evidence")
+            elif not _cites_source_read(flow_evidence, evidence_records):
+                errors.append(f"{label}.evidence_ids must cite a captured source read")
+
+            flow_units = workflow.get("coverage_ids")
+            if not _valid_ids(flow_units, set(units)) or not flow_units:
+                errors.append(f"{label}.coverage_ids must be unique known coverage IDs")
+                continue
+            flow_business_units = {
+                coverage_id for coverage_id in flow_units
+                if coverage_id in business_unit_ids
+            }
+            if not flow_business_units:
+                errors.append(f"{label} must link at least one business_logic coverage unit")
+            if len(flow_business_units) != len(flow_units):
+                errors.append(f"{label}.coverage_ids may link only business_logic coverage units")
+            linked_business_units.update(flow_business_units)
+
+        if not business_unit_ids:
+            errors.append("business_logic_review REVIEWED requires a business_logic coverage unit")
+        orphaned = business_unit_ids - linked_business_units
+        if orphaned:
+            errors.append("business_logic coverage units are not linked from a workflow: " + ", ".join(sorted(orphaned)))
+        if _valid_evidence_ids(evidence_ids, evidence_records) and isinstance(workflows, list):
+            for i, workflow in enumerate(workflows):
+                if isinstance(workflow, dict):
+                    flow_evidence = workflow.get("evidence_ids")
+                    if _valid_evidence_ids(flow_evidence, evidence_records) and not set(flow_evidence).issubset(set(evidence_ids)):
+                        errors.append(f"business_logic_review.workflows[{i}] evidence_ids must be included in review evidence_ids")
+        return errors, not errors
+
+    if status == "N/A":
+        if not isinstance(workflows, list) or workflows:
+            errors.append("business_logic_review N/A must have an empty workflows list")
+        if business_unit_ids:
+            errors.append("business_logic_review N/A cannot coexist with business_logic coverage units")
+        reason = value.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append("business_logic_review N/A requires a reason")
+        searches = value.get("absence_searches")
+        if not _valid_absence_searches(searches, evidence_records):
+            errors.append("business_logic_review N/A requires two distinct captured zero-match searches")
+        search_ids = [
+            search.get("evidence_id") for search in searches
+            if isinstance(search, dict) and isinstance(search.get("evidence_id"), str)
+        ] if isinstance(searches, list) else []
+        if not _valid_evidence_ids(evidence_ids, evidence_records) or not set(search_ids).issubset(set(evidence_ids)):
+            errors.append("business_logic_review N/A must cite its absence searches in evidence_ids")
+        return errors, not errors
+
+    if isinstance(status, str) and status in {"NOT_CHECKED", "IN_PROGRESS"}:
+        reason = value.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"business_logic_review {status} requires a reason and scope limitation")
+        if isinstance(workflows, list):
+            for i, workflow in enumerate(workflows):
+                if not isinstance(workflow, dict) or not isinstance(workflow.get("workflow_id"), str):
+                    errors.append(f"business_logic_review.workflows[{i}] must be an identified workflow")
+        if evidence_ids and not _valid_evidence_ids(evidence_ids, evidence_records):
+            errors.append("business_logic_review has unknown or incomplete evidence_ids")
+    return errors, False
+
+
 def _validate_run_gate(
     obj: dict,
     units: dict[str, dict],
@@ -639,6 +768,7 @@ def _validate_run_gate(
     final_clean_present: bool,
     all_waves_independent: bool,
     candidates_complete: bool,
+    business_logic_complete: bool,
 ) -> list[str]:
     errors: list[str] = []
     status = obj.get("run_status")
@@ -684,6 +814,8 @@ def _validate_run_gate(
         errors.append("complete run requires an independent post_wave critic for every wave")
     if not candidates_complete:
         errors.append("complete run requires terminal independent dispositions for all candidates")
+    if not business_logic_complete:
+        errors.append("complete run requires a reviewed business_logic workflow inventory or evidenced N/A")
     if reasons:
         errors.append("complete run must have an empty incomplete_reasons list")
     return errors
@@ -699,7 +831,7 @@ def _validate_schema(obj: dict, evidence_records: dict[str, dict], evidence_root
     if not isinstance(obj, dict):
         return ["pairing-table top-level must be an object"]
 
-    for required in ("rows", "coverage_paragraph_present", "class_coverage", "coverage_units", "coverage_reviews", "candidate_reviews", "run_status", "budget", "incomplete_reasons", "guard_checks"):
+    for required in ("rows", "coverage_paragraph_present", "class_coverage", "business_logic_review", "coverage_units", "coverage_reviews", "candidate_reviews", "run_status", "budget", "incomplete_reasons", "guard_checks"):
         if required not in obj:
             errors.append(f"missing required field: {required}")
 
@@ -792,6 +924,10 @@ def _validate_schema(obj: dict, evidence_records: dict[str, dict], evidence_root
         obj.get("coverage_units"), coverage_status_by_category, evidence_records
     )
     errors.extend(unit_errors)
+    business_logic_errors, business_logic_complete = _validate_business_logic_review(
+        obj.get("business_logic_review"), units_by_id, evidence_records
+    )
+    errors.extend(business_logic_errors)
     review_errors, final_clean_present, all_waves_independent, post_wave_reviewers = _validate_coverage_reviews(
         obj.get("coverage_reviews"), units_by_id, evidence_records,
         require_complete=obj.get("run_status") == "complete"
@@ -805,7 +941,8 @@ def _validate_schema(obj: dict, evidence_records: dict[str, dict], evidence_root
     errors.extend(candidate_errors)
     errors.extend(_validate_run_gate(
         obj, units_by_id, coverage_status_by_category,
-        final_clean_present, all_waves_independent, candidates_complete
+        final_clean_present, all_waves_independent, candidates_complete,
+        business_logic_complete
     ))
 
     guards = obj.get("guard_checks")
@@ -858,6 +995,7 @@ def validate(text: str, evidence_records: dict[str, dict], evidence_root: Path) 
     has_coverage = _has_coverage_paragraph(text)
     has_class_coverage = _has_marker(text, CLASS_COVERAGE_MARKERS)
     has_guard_ledger = _has_marker(text, GUARD_LEDGER_MARKERS)
+    has_business_logic_review = _has_marker(text, BUSINESS_LOGIC_MARKERS)
     obj, parse_err = _extract_pairing_table(text)
     if obj is None:
         return 1, [parse_err or "pairing table not found"]
@@ -871,9 +1009,11 @@ def validate(text: str, evidence_records: dict[str, dict], evidence_root: Path) 
         errors.append("Class Coverage section not found")
     if not has_guard_ledger:
         errors.append("Guard Evaluation Ledger section not found")
+    if not has_business_logic_review:
+        errors.append("Business Process Security Review section not found")
     if schema_errors:
         return 2, errors
-    if not has_coverage or not has_class_coverage or not has_guard_ledger:
+    if not has_coverage or not has_class_coverage or not has_guard_ledger or not has_business_logic_review:
         return 3, errors
     return 0, []
 

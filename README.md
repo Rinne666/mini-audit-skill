@@ -10,7 +10,8 @@ state machine and cannot prove semantic completeness.
 
 - `SKILL.md` — the skill itself. How the model runs an audit.
 - `references/` — methodology (Discovery, Verification,
-  Permission Delta, Search Strategy) and eight vuln-class
+  Permission Delta, Search Strategy, and security-relevant
+  Business Process Review) and eight vuln-class
   references (authz, injection, deserialization, path traversal,
   ssrf, crypto, race condition, cross-service trust).
 - `templates/audit-notes.md` — the single Markdown file the
@@ -18,9 +19,9 @@ state machine and cannot prove semantic completeness.
 - `templates/finding.md` — the one-finding-per-file report
   template.
 - `schemas/pairing-table.schema.json` and `runtime/validate_notes.py` —
-  structural checks for baseline roll-ups, coverage-unit IDs and closure,
-  independent review records, candidate dispositions, run status, budget,
-  guard evaluations, and evidence references.
+  structural checks for baseline roll-ups, business-workflow coverage,
+  coverage-unit IDs and closure, independent review records, candidate
+  dispositions, run status, budget, guard evaluations, and evidence references.
 - `runtime/coverage_id.py` — deterministic IDs from surface, trust boundary,
   subsystem, attack class, and optional lifecycle.
 - `runtime/evidence_log.py` — bounded, read-only source search/read capture
@@ -33,8 +34,9 @@ state machine and cannot prove semantic completeness.
    rename it for the target.
 3. Run the five-stage loop (Scope → Discover → Verify → Synthesize →
    Report). Set a hard budget, map baseline and target-specific surfaces into
-   stable coverage units, and work one unit at a time. After each wave, use a
-   separate cold-start critic to find missing entry points and paths; record
+   stable coverage units, including `business_logic` units for material
+   security-sensitive workflows, and work one unit at a time. After each wave,
+   use a separate cold-start critic to find missing entry points and paths; record
    newly found gaps as later-wave units. Capture source searches/reads with
    `runtime/evidence_log.py`, and edit the notes file every round. If there is
    no independent reviewer or a candidate remains unresolved, report the run
