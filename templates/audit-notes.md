@@ -1,8 +1,8 @@
 # Audit Notes — {target}
 
 > One Markdown file. The whole state of this audit. Edit it in place,
-> every round. No IDs or transactions; a small schema checks the
-> pairing and coverage ledgers below.
+> every round. Evidence IDs point to captured artifacts; the file has
+> no separate audit-state database or transaction system.
 > The file *is* the canonical state — make it readable to a stranger.
 
 ---
@@ -21,17 +21,33 @@ model reads a new surface during Discover, add a bullet.
 
 ## Baseline Security Lenses
 
-Before Discover, give each required lens a status and record the search strategy:
+Before Discover, give each required lens a status and record the search strategy.
+Allowed statuses: `NOT_CHECKED`, `IN_PROGRESS`, `HUNTED`, `N/A`, `NEEDS-RUNTIME`.
+Keep `evidence.jsonl` and its artifact directory in the private audit workspace.
+Use `runtime/evidence_log.py` for source searches and bounded reads, then cite
+its IDs below. Do not commit target source excerpts.
 
-| Category | Status (`HUNTED` / `N/A`) | Strategy | Evidence / absence searches |
+| Category | Status | Strategy | Evidence IDs / limitation |
 |---|---|---|---|
 | Low-privilege writes to authentication/authorization fields | | | |
 | Asserted identity to trust or access-control decision | | | |
 | Callback/plugin/event output to dangerous consumer | | | |
 | Security-relevant state write to cross-endpoint consumer | | | |
 
-`N/A` requires a reason and two distinct query/result records. A class the initial
-hypothesis did not name is not automatically N/A.
+`N/A` requires a reason and two distinct captured zero-match searches. If a
+category was not checked, use `NOT_CHECKED` or `IN_PROGRESS`, never `N/A`.
+
+## Work Queue
+
+The `work_queue` array in the Synthesize JSON below is the single source of
+truth. Before starting a task, mark it `active`, write its next action, budget
+unit, and stop condition. Keep exactly one active task; append tangents as
+`queued` work with a brief impact reason. Close each task as `completed` or
+`deferred` before selecting another. Before Report, no task may remain active
+or queued; deferred items must explain the reason and resulting limitation.
+Complete a bounded pass for each baseline category before deep dives, and
+record a completed `final_review` task for `N/A`, `DISPROVED`, and high-impact
+guard decisions before Report.
 
 ## Security Decision Points
 
@@ -96,16 +112,19 @@ disproofs have evidence-backed statuses.
 
 Include the machine-readable JSON object required by
 `schemas/pairing-table.schema.json`. List discovered source-to-consumer
-relationships, all four required `class_coverage` categories, and `guard_checks`.
-The table is a coverage prompt; its presence does not prove the search was
-complete.
+relationships, all four required `class_coverage` categories with statuses,
+`guard_checks`, the work queue, and evidence IDs returned by
+`runtime/evidence_log.py`. The ledger makes completed and deferred work
+reviewable; it does not prove that uncaptured tool use did not occur or that
+the search was semantically complete.
 
 ## How to use this file
 
 1. **Scope round.** Fill in Objective + Attack Surface + Baseline Security
-   Lenses + Security Decision Points. Stop when the target, attacker boundary,
-   and initial evidence-backed lens statuses are recorded.
-2. **Discover round.** Add Hypotheses. Each hypothesis names its
+   Lenses + Security Decision Points and create one bounded queue task per
+   baseline category. Stop when the target, attacker boundary, and initial
+   evidence-backed lens statuses are recorded.
+2. **Discover round.** Select one active queue task. Add Hypotheses. Each hypothesis names its
    disproof. Read code, trace data flow, read references, ask an
    independent sub-agent. When evidence proves a hypothesis, move it
    to Verified Facts. Preserve high-impact disproved hypotheses with their

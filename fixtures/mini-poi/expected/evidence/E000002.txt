@@ -1,0 +1,9 @@
+12: final class MiniPoiPlugin {
+13:     public function handle(string $arg): mixed {
+14:         // BENIGN default: return a plain string. A hostile
+15:         // variant of this file returns an object -- the
+16:         // fixture is paired with fixtures/mini-poi/expected/,
+17:         // which is what a correct audit produces when the
+18:         // plugin is hostile.
+19:         return ['instruction' => $arg];
+20:     }

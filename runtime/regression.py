@@ -12,16 +12,16 @@ The script does NOT call an LLM. It validates that the
 canonical "correct audit output" for each fixture passes
 the two enforcement primitives already in this repo:
 
-  - validate-notes (pairing-table schema + Coverage paragraph)
+  - validate-notes (pairing, coverage, work queue, and evidence artifacts)
   - check-skill-loaded (file-fingerprint manifest)
 
 What this proves: the format the audit must produce is
 structurally enforced.
 
 What this does NOT prove: that an LLM, given the skill and
-a real target, will produce that format. The LLM-in-the-loop
-trial is out-of-band. This script only catches the failure
-mode where the framework regresses in format.
+a real target, will produce that format or complete the audit.
+Evidence fixture records also show the expected ledger shape; they
+do not make evidence logs tamper-proof or prove semantic completeness.
 
 Usage:
 
@@ -56,12 +56,21 @@ def _run(cmd: list[str]) -> tuple[int, str]:
 def check_fixture(fixture_dir: Path) -> tuple[bool, list[str]]:
     """Validate one fixture's expected/notes.md against the two primitives."""
     notes = fixture_dir / "expected" / "notes.md"
+    evidence = fixture_dir / "expected" / "evidence.jsonl"
     if not notes.exists():
         return False, [f"missing expected/notes.md in {fixture_dir}"]
+    if not evidence.exists():
+        return False, [f"missing expected/evidence.jsonl in {fixture_dir}"]
     failures: list[str] = []
 
     # 1. validate-notes
-    code, out = _run(["python3", str(REPO_ROOT / "runtime" / "validate_notes.py"), str(notes)])
+    code, out = _run([
+        "python3",
+        str(REPO_ROOT / "runtime" / "validate_notes.py"),
+        str(notes),
+        "--evidence-ledger",
+        str(evidence),
+    ])
     if code != 0:
         failures.append(f"validate-notes exit {code}: {out}")
 

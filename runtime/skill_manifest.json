@@ -1,8 +1,8 @@
 {
   "_comment": "Skill file fingerprint manifest. Used by runtime/check_skill_loaded.py to verify that the version of SKILL.md / references / templates currently in the agent context matches HEAD of the skill repo. Updated by `python runtime/check_skill_loaded.py --refresh`. See SKILL.md session-start rule.",
   "files": {
-    "README.md": "ce4da3489989d856fef4b54ae074fb684cfb46984a7b82c3ef751a57f678ed55",
-    "SKILL.md": "8e423ae4565f85bb3b8d8a7ce7c183f9dd85f2beb393e10d065ff64b1d7133b6",
+    "README.md": "22e385ba0cf2eb3da1d5b140d5d1a6d539ec3d20406633509ea3904a9ad02914",
+    "SKILL.md": "9c0719578245ae1537c3d8031299cd986eac175ed7082bae0ef5a617dce959dd",
     "references/discovery.md": "a43f5187419cf80508e2cf8d9f1a6a30beb885654a74a0ba27caf880977b463d",
     "references/permission-delta.md": "46b241cc4ce81e28de282851d0a8ddaa378d44c44b31fe270b87f14b9ec41cc1",
     "references/search-strategy.md": "99d10dc8cdd02f13a9ee69f4b29c9389b98e214024fff4a150ab4a9daf35c15a",
@@ -15,10 +15,10 @@
     "references/vuln-classes/path_traversal.md": "0adf9dae67fdab1810dd25f5cbd4a41e4642ca2bb0789520e6c4b64ab9d2534b",
     "references/vuln-classes/race_condition.md": "12380ac0d971eda406e94aae64d1fcf82c4160683e0cab092133f859faff19c5",
     "references/vuln-classes/ssrf.md": "69a1ab9a572c87450e31edc64114f3c90b99db337629f3c48eceb3a66b16c507",
-    "schemas/pairing-table.schema.json": "bdc39633c740611012858df082898139e87f4144b7f479bec9a89e833e201183",
-    "templates/audit-notes.md": "766ef06606777acf0a048a4ba038d102f5903a2c9a610924dc798198c148cd03",
+    "schemas/pairing-table.schema.json": "592ef8cdf0349b7f299087eed9271984a02664a6d379ddcb27325ddf4b096c1f",
+    "templates/audit-notes.md": "d80f890b73643cb2611244b1152cc4d410e87c487b68dd5215aed54f95ea7d43",
     "templates/finding.md": "f668cb9f2b789a8b453c64c79586c1ba7a4af70747e089fbd8164ac54c71b1f7"
   },
-  "generated_at_unix": 1790479158,
+  "generated_at_unix": 1790483875,
   "schema_version": 1
 }
