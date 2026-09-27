@@ -24,6 +24,17 @@ Authorization bugs are not "missing a check." They are:
   resource binding can be replayed across users.
 - Mass assignment on user-controlled fields like `role`,
   `is_admin`, `tenant_id`, `owner_id`.
+- Authentication-critical fields such as authentication mode,
+  external identity mapping, password state, or SSO linkage. Trace
+  their writers to login and account-recovery consumers; a field
+  need not directly store a role to change who can log in as whom.
+- Multiple APIs that reach the same resource update primitive.
+  Compare field-level allowlists and authorization granularity on
+  legacy, current, bulk, and administrative paths instead of
+  treating each API as a separate resource operation.
+- Parsed input types at the guard and at the write. JSON numbers,
+  strings, booleans, nulls, form values, and ORM-coerced values can
+  make an apparently correct membership or equality check inert.
 
 ## Disproofs that often fail
 
@@ -34,6 +45,10 @@ Authorization bugs are not "missing a check." They are:
 - "The function takes the user from the session." Is the
   resource lookup keyed by that user, or by a parameter? If by a
   parameter, the attacker can pass another user's id.
+- "There is a protected-field list." Does it include every field
+  that affects authentication, authorization, ownership, or tenant
+  selection? Read the update path and evaluate the list against the
+  actual input types.
 
 ## The permission delta
 

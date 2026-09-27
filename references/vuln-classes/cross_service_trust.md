@@ -1,16 +1,30 @@
 # Cross-Service Trust
 
-A service trusts another service's request because the request
-arrived over an internal network, came with an internal API key,
-or carries a header the internal services know to honor. The bug
-class is the gap between "I am sure this is service A" and "I
-should actually trust service A on this request."
+A component trusts an asserted identity because it arrived over an
+internal network, came with an internal credential, or carries a
+header, protocol field, or name that the component knows to honor.
+The trust boundary can be between services or inside one daemon.
+The bug class is the gap between "this value says the peer is X"
+and "the consumer independently verified that X may assert it."
 
 ## Where to look
 
 - Service-to-service headers honored by the receiving service
   without independent verification (`X-User-Id`, `X-Tenant-Id`,
   `X-Internal-Role`).
+- Proxy identity protocols and forwarded headers (`PROXY` protocol,
+  `X-Forwarded-For`, `Forwarded`) whose asserted source address is
+  passed into host or network ACLs. Check who can connect and send
+  the assertion, whether the daemon validates the proxy, and which
+  address the ACL actually consumes.
+- DNS-derived names and reverse-lookup fallbacks used for allow/deny
+  decisions. Follow lookup failure values such as `UNKNOWN` through
+  the ACL evaluator; determine whether an unresolved deny entry fails
+  open or closed.
+- Client addresses, hostnames, peer certificates, and authenticated
+  principal fields that are parsed or rewritten before the policy
+  decision. Enumerate all writers and all consumers of the identity
+  value, including local protocol handlers.
 - Internal API keys in shared config or environment variables
   that any compromised service can read.
 - Webhooks received over a public endpoint whose signature

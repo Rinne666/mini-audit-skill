@@ -20,11 +20,24 @@ For every entry point, name:
 - The shape of the input at entry (raw body, parsed struct,
   authenticated principal).
 
+For values that can affect identity, access, ownership, or privilege,
+also record the parsed type and every security decision that consumes
+the value. A route-level authorization check can miss a protected
+field or a second API that reaches the same write primitive.
+
 The goal of Discovery is a map of the attack surface relevant to
 the audit objective, not an exhaustive catalog of every endpoint.
 Expand the map when evidence reveals a new reachable boundary.
 A static check-list of every handler biases the audit toward
 counting rather than finding.
+
+This does not mean using only the bug class named in the request.
+Before Discover, use the compact baseline lenses from `SKILL.md` to
+map security decision points: sensitive-field writes and their
+authentication/authorization readers; asserted identities and the
+ACLs that consume them; cross-endpoint state; and callback output to
+dangerous consumers. Inventory relevant primitives and decisions,
+not every endpoint in the product.
 
 ## Read backward from sinks
 

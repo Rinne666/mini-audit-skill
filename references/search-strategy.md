@@ -10,19 +10,28 @@ That question is the only thing that needs an answer before the
 next hypothesis is worth writing. Update the **Remaining Questions**
 section every time the answer to that question shifts.
 
-## Stop searching when the next answer changes nothing
+## Stop only after coverage is closed
 
-A common failure: the audit keeps generating plausible-looking
-hypotheses long after the remaining questions have stopped
-mattering. Two symptoms:
+A saturation judgment is meaningful only after the audit has
+completed the mandatory class-coverage, entry-point, decision-point,
+and guard-evaluation ledgers in `SKILL.md`. The model's own
+hypothesis list is not evidence that the hypothesis space is
+complete. In particular, an empty Remaining Questions section or
+several rounds without a new finding is not a stop condition while
+any baseline category is unreviewed or marked N/A without evidence.
+
+After coverage closes, two symptoms suggest further searching may
+have low value:
 
 - Hypotheses are getting narrower (different parameter, different
   encoding, different auth state) without producing a new
   permission or capability delta.
 - The model is re-reading code it has already read.
 
-When either happens, the audit is saturated. Stop, finalize the
-notes, hand over to Report. More searching is not more quality.
+When either happens, close remaining evidence gaps and ask whether
+another search can change the permission delta. If it cannot, stop
+and report the scope and limitations. Do not turn "no new hypothesis"
+into a universal claim that no vulnerability exists.
 
 ## Variant analysis: one bounded pass after each finding
 

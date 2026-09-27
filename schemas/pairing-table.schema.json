@@ -1,55 +1,95 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/pairing-table.schema.json",
-  "title": "Synthesize Pairing Table",
-  "description": "Pairing table that every audit must produce before the Report stage starts. Each row pairs a trust-source with a trust-consumer (see SKILL.md Hard Gate). The runtime validate-notes CLI enforces this schema; a missing table or a row with no file:line proof is a hard failure.",
+  "title": "Synthesize Pairing and Coverage Ledgers",
+  "description": "Structural requirements for the mandatory trust-pairing categories, class coverage, and guard evaluation. Passing this schema does not prove that the audit searched completely or that its conclusions are correct.",
   "type": "object",
-  "required": ["rows", "coverage_paragraph_present"],
+  "required": ["rows", "coverage_paragraph_present", "class_coverage", "guard_checks"],
   "properties": {
     "rows": {
       "type": "array",
-      "minItems": 1,
-      "description": "Every dangerous primitive crossed with every reachable trust-consumer. An empty array is a hard failure - it means the audit did not enumerate.",
+      "description": "Evidence-backed trust-source to trust-consumer relationships discovered during the audit.",
       "items": {
         "type": "object",
-        "required": [
-          "trust_source",
-          "trust_consumer",
-          "status",
-          "file_line"
-        ],
+        "required": ["category", "trust_source", "trust_consumer", "attacker_reach", "status", "file_line", "rationale"],
         "properties": {
-          "trust_source": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Component that produces / writes / trusts value X. Typically a handler name, callback id, plugin name, or endpoint id."
+          "category": {
+            "enum": ["authz_sensitive_write", "identity_to_decision", "callback_to_sink", "state_cross_endpoint", "other"]
           },
-          "trust_consumer": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Component that reads / consumes X but lacks a fresh authorization check. Typically a sink (unserialize / include / eval / file-write / permission-decision) or a downstream endpoint / service."
+          "trust_source": {"type": "string", "minLength": 1},
+          "trust_consumer": {"type": "string", "minLength": 1},
+          "attacker_reach": {"type": "string", "minLength": 1},
+          "status": {"enum": ["upgraded", "DISPROVED", "NEEDS-RUNTIME"]},
+          "file_line": {"type": "string", "pattern": "^.+:[0-9]+(-[0-9]+)?$"},
+          "rationale": {"type": "string", "minLength": 1},
+          "disproof_evidence": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "class_coverage": {
+      "type": "array",
+      "minItems": 4,
+      "description": "One explicit status for each baseline security lens, whether hunted or justified as not applicable.",
+      "items": {
+        "type": "object",
+        "required": ["category", "status", "strategy", "evidence"],
+        "properties": {
+          "category": {"enum": ["authz_sensitive_write", "identity_to_decision", "callback_to_sink", "state_cross_endpoint"]},
+          "status": {"enum": ["HUNTED", "N/A"]},
+          "strategy": {"type": "string", "minLength": 1},
+          "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "absence_searches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["query", "result"],
+              "properties": {
+                "query": {"type": "string", "minLength": 1},
+                "result": {"type": "string", "minLength": 1}
+              },
+              "additionalProperties": false
+            }
           },
-          "status": {
-            "enum": ["upgraded", "DISPROVED", "NEEDS-RUNTIME"],
-            "description": "Result of pairwise analysis. upgraded = chain survives with file:line proof on every hop. DISPROVED = chain dies at a specific hop, named in rationale. NEEDS-RUNTIME = static analysis could not close, mark for runtime verification."
-          },
-          "file_line": {
-            "type": "string",
-            "pattern": "^.+:[0-9]+(-[0-9]+)?$",
-            "description": "file:line or file:start-end reference for the trust-source or the first hop. Empty or vague values are rejected."
-          },
-          "rationale": {
-            "type": "string",
-            "minLength": 1,
-            "description": "One sentence explaining why this row exists and why the chosen status holds."
+          "reason": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "guard_checks": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Semantic evaluation records for guards near dangerous sinks or security decisions.",
+      "items": {
+        "type": "object",
+        "required": ["protected_consumer", "guard_location", "expression", "attacker_input_shape", "evaluated_result", "verdict"],
+        "properties": {
+          "protected_consumer": {"type": "string", "minLength": 1},
+          "guard_location": {"type": "string", "minLength": 1},
+          "expression": {"type": "string", "minLength": 1},
+          "attacker_input_shape": {"type": "string", "minLength": 1},
+          "evaluated_result": {"type": "string", "minLength": 1},
+          "verdict": {"enum": ["effective", "ineffective", "uncertain", "none_found"]},
+          "absence_searches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["query", "result"],
+              "properties": {
+                "query": {"type": "string", "minLength": 1},
+                "result": {"type": "string", "minLength": 1}
+              },
+              "additionalProperties": false
+            }
           }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "coverage_paragraph_present": {
       "type": "boolean",
       "enum": [true],
-      "description": "The notes file must contain a Coverage paragraph (SKILL.md Coverage rule). This field is a structural assertion that it does."
+      "description": "The notes file contains a Coverage section enumerating protocol entries reaching each dangerous primitive."
     }
   },
   "additionalProperties": false

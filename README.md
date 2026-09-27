@@ -1,9 +1,10 @@
 # mini-audit-skill
 
-A pure-Prompt security audit Skill. The model reasons about a
+A prompt-led security audit Skill. The model reasons about a
 target codebase; the Harness provides shell, files, sub-agents,
-and any required isolation. There is no Runtime, no schema, no
-state machine, no CLI.
+and any required isolation. A small stdlib runtime validates
+audit-note structure and skill freshness; it is not a full audit
+state machine and cannot prove semantic completeness.
 
 ## What you get
 
@@ -16,25 +17,31 @@ state machine, no CLI.
   model maintains during the audit.
 - `templates/finding.md` — the one-finding-per-file report
   template.
+- `schemas/pairing-table.schema.json` and `runtime/validate_notes.py` —
+  structural checks for the four baseline security lenses, pairing rows,
+  and guard evaluation records.
 
 ## How to use it
 
 1. Load `SKILL.md`.
 2. Copy `templates/audit-notes.md` into the audit workspace and
    rename it for the target.
-3. Run the four-stage loop (Scope → Discover → Verify → Report).
-   Edit the notes file every round.
+3. Run the five-stage loop (Scope → Discover → Verify → Synthesize →
+   Report). Scope records baseline authz, identity-trust, callback-to-sink,
+   and cross-endpoint-state lenses even when the initial hypothesis names
+   another class. Edit the notes file every round.
 4. For each Verified Fact, write a `templates/finding.md`.
 
 ## What this Skill is not
 
-- It is not a runtime. It does not provide a sandbox, a CLI, a
-  schema, or a state machine.
-- It does not own a Search Ledger or a coverage ledger. There is
-  no canonical-state artifact beyond the audit notes file.
-- It does not define phases as gates. The four stages are
-  cognitive stages the model moves between. The notes file
-  does not enforce transitions; the reviewer does.
+- It does not provide a sandbox or a full audit state machine.
+  Its runtime checks record shape; they do not prove a search was
+  performed or that its scope was complete.
+- It does not maintain separate Search or Coverage Ledger files;
+  the ledgers live in the canonical audit notes.
+- It does not implement a full state machine. Scope, Discover,
+  Verify, and Synthesize can interleave; Report has a structural
+  precondition check, while the reviewer judges semantic completeness.
 
 ## Isolation
 
