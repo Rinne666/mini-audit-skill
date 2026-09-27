@@ -25,6 +25,9 @@ in the difficulty of exploitation.
 
 - Attacker state (network position, credentials, prior capability).
 - System state (config flag on, debug mode, deployment shape).
+- Default configuration impact and impact in supported/common deployments.
+- The exact condition that unlocks the chain; a non-default configuration
+  is a precondition to describe, not by itself a reason to dismiss the issue.
 
 ## Attack path
 

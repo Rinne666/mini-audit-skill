@@ -1,7 +1,8 @@
 # Audit Notes — {target}
 
 > One Markdown file. The whole state of this audit. Edit it in place,
-> every round. No IDs, no schema, no transactions, no generator.
+> every round. No IDs or transactions; a small schema checks the
+> pairing and coverage ledgers below.
 > The file *is* the canonical state — make it readable to a stranger.
 
 ---
@@ -17,6 +18,38 @@ Rewrite this section when the objective shifts.
 Entry points and trust boundaries the attacker can reach. One bullet
 per surface, with the file path and the rough data flow. When the
 model reads a new surface during Discover, add a bullet.
+
+## Baseline Security Lenses
+
+Before Discover, give each required lens a status and record the search strategy:
+
+| Category | Status (`HUNTED` / `N/A`) | Strategy | Evidence / absence searches |
+|---|---|---|---|
+| Low-privilege writes to authentication/authorization fields | | | |
+| Asserted identity to trust or access-control decision | | | |
+| Callback/plugin/event output to dangerous consumer | | | |
+| Security-relevant state write to cross-endpoint consumer | | | |
+
+`N/A` requires a reason and two distinct query/result records. A class the initial
+hypothesis did not name is not automatically N/A.
+
+## Security Decision Points
+
+For each authentication, authorization, ACL decision, or security-sensitive
+state consumer, record its inputs, source, attacker control, parsed/runtime
+types, and the independent check made at the consumer. Include supported
+configuration states that alter the trust boundary.
+
+## Guard Evaluation Ledger
+
+Record every guard claimed to protect a dangerous sink or security decision:
+
+| Protected consumer | Guard `file:line` | Exact expression | Attacker input type/shape | Evaluated result | Verdict |
+|---|---|---|---|---|---|
+
+Do not write "standard check exists". Evaluate the expression for attacker-
+controlled types and values. If no guard was found, record two distinct
+queries and their results.
 
 ## Verified Facts
 
@@ -36,6 +69,9 @@ the form:
 
 State the disproof condition alongside the hypothesis. If you cannot
 state the disproof, the hypothesis is too vague to test — rewrite it.
+Retain high-impact disproved or downgraded hypotheses with their original
+statement, evidence that killed them, and any configuration that could unblock
+the chain. Do not erase them after changing status.
 
 ## Blocked Leads
 
@@ -50,17 +86,30 @@ The one question, if answered, would most likely change the audit
 conclusion. Update this list as the audit progresses. When the answer
 matters less than it used to, replace it.
 
+An empty list is not a stop signal by itself. Stop only after all baseline
+lenses, entry points, security decision points, guards, and high-impact
+disproofs have evidence-backed statuses.
+
 ---
+
+## Synthesize Pairing Table
+
+Include the machine-readable JSON object required by
+`schemas/pairing-table.schema.json`. List discovered source-to-consumer
+relationships, all four required `class_coverage` categories, and `guard_checks`.
+The table is a coverage prompt; its presence does not prove the search was
+complete.
 
 ## How to use this file
 
-1. **Scope round.** Fill in Objective + Attack Surface. Stop when the
-   model can name the highest-value target capability and the boundary
-   the attacker starts from.
+1. **Scope round.** Fill in Objective + Attack Surface + Baseline Security
+   Lenses + Security Decision Points. Stop when the target, attacker boundary,
+   and initial evidence-backed lens statuses are recorded.
 2. **Discover round.** Add Hypotheses. Each hypothesis names its
    disproof. Read code, trace data flow, read references, ask an
    independent sub-agent. When evidence proves a hypothesis, move it
-   to Verified Facts. When evidence disproves it, delete it.
+   to Verified Facts. Preserve high-impact disproved hypotheses with their
+   evidence instead of deleting their audit trail.
 3. **Verify round.** For every Verified Fact, ask: is the evidence
    strong enough that another auditor, with no prior context, would
    agree? If not, run another experiment or escalate to an

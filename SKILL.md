@@ -1,12 +1,13 @@
 # mini-audit
 
-A pure-Prompt Skill for security audits. The model reasons; the
+A prompt-led Skill for security audits. The model reasons; the
 Harness executes; this Skill is the playbook the model follows.
 
-This Skill provides no runtime, no schema, no state machine, no
-canonical-state artifact, no CLI, no scheduler. The audit state
-lives in **one Markdown file** that the model edits every round
-(`templates/audit-notes.md`).
+The audit state lives in **one Markdown file** that the model edits
+every round (`templates/audit-notes.md`). The small runtime checks
+in this repository validate output structure and skill freshness;
+they do not prove that the audit's inventory or conclusions are
+semantically complete.
 
 ## When to load this Skill
 
@@ -40,8 +41,9 @@ have in context to audit correctly.
 ## The five things this Skill teaches
 
 1. **How to frame the audit.** Define the target, the attacker,
-   the highest-value capability, and the boundary the attacker
-   starts from.
+   the highest-value capability, the attacker's starting boundary,
+   and baseline security lenses that must be considered even when
+   the initial hypothesis does not suggest them.
 2. **The five-stage loop.** Scope → Discover → Verify →
    Synthesize (chaining) → Report. The model moves between
    stages freely; the notes file does not gate them, but
@@ -90,10 +92,45 @@ Ask the audit:
 - What is the highest-value target capability?
 - What boundary does the attacker start from?
 
+Before ending Scope, make a first-pass inventory of these security
+decision lenses, even if the user named a different bug class:
+
+- **Sensitive writes and authorization consumers:** who can change
+  roles, ownership, tenant IDs, authentication modes, permissions,
+  or other fields that later affect authentication or authorization?
+- **Identity assertions and trust decisions:** who can assert an IP,
+  hostname, user, tenant, role, or service identity (including
+  proxy headers, PROXY protocol, DNS/PTR, tokens, and peer
+  credentials), and which ACL or authorization decisions consume it?
+- **Persisted state across boundaries:** which endpoint, callback, or
+  job writes security-relevant state, and which other endpoint or
+  process later trusts it?
+- **Callbacks and dangerous consumers:** can plugin, event, template,
+  or callback output reach deserialization, code execution, file,
+  permission, or other security-sensitive consumers?
+
+Put each lens in the notes file as `HUNTED` or `N/A`, with the
+strategy and evidence. `N/A` is a conclusion to support, not a blank
+cell. Load the relevant class references while scoping, before
+Discover, so the model does not need to name an unfamiliar class
+before receiving the checklist that would help it recognize the
+class. Treat these lenses as a baseline, not an exhaustive list; add
+target-specific classes suggested by the architecture.
+
+For every identity or security-relevant value, record its source,
+attacker control, parsed/runtime type, consumer, and the independent
+check performed at that consumer. A configuration flag or a manual
+deployment recommendation is a precondition, not proof that the
+enabled path is safe. Mark unverified external claims about intended
+behavior, documentation, or upstream fixes as `[prior]`; do not use
+them to disprove a hypothesis until verified against the target or
+an authoritative source.
+
 End Scope when the **Objective** and **Attack Surface** sections
-of the notes file are written and the highest-value target is
-named. The map covers the surface relevant to the objective; it
-expands when later evidence reveals a new reachable boundary.
+of the notes file are written, the highest-value target is named,
+and the baseline lenses have an evidence-backed initial status. The
+map covers the surface relevant to the objective and expands when
+later evidence reveals a new reachable boundary.
 
 ### Discover
 
@@ -104,6 +141,14 @@ Read code. Trace data flow. Read references when needed. Ask a
 sub-agent for parallel variant or chain searches. Add entries to
 the **Hypotheses** section, one per hypothesis, written so the
 disproof is named alongside.
+
+Balance sink-driven searches with the baseline authorization and
+trust-decision lenses. Allocate effort by potential permission
+delta, not by whether code looks central, admin-only, or easy to
+grep. A release-note/CVE checklist is one search strategy, not a
+scope boundary. Treat security-related `TODO`, `FIXME`, and `XXX`
+comments as review signals; they do not mean the issue is already
+understood or safe to skip.
 
 ### Verify
 
@@ -130,12 +175,25 @@ before concluding absence; retry with a broader pattern.
 asserted a manifest guard that did not exist, downgrading a
 CRITICAL RCE to "design boundary" until re-examined.)
 
+**Guard semantics rule**: reading the guard and finding its line is
+only the start. Record the exact comparison or predicate, the
+attacker-controlled value's type and shape after parsing, and the
+predicate's result for that value. Check coercion, normalization,
+null/boolean cases, and collection element types where relevant.
+Name the sink or decision the guard is meant to protect. A guard is
+effective only if it blocks every relevant attacker-controlled form
+at that consumer. Do not summarize this as "standard check exists";
+put it in the Guard Evaluation Ledger in the notes. If evaluation is
+uncertain, keep the hypothesis open or mark it `NEEDS-RUNTIME`.
+
 **Absence recheck.** "X does not exist" is itself a claim that
 requires evidence. A grep that returns empty is a query-failure
 signal first, an absence signal second. Before writing "X is
 absent" or "no such call site", retry with a broader pattern,
 an alt path syntax, or a different tool. Two empty greps with
 two independent patterns support absence; one does not.
+Record each query and its result in the class-coverage ledger so a
+reviewer can distinguish an empty result from an unrun search.
 (Added 2026-09-25 after a scan whose Flow-syntax literal `case
 'F':` was missed by a single-pattern grep and treated as
 absent, hiding a `decodeReply` entry to the same primitive
@@ -157,7 +215,11 @@ evidence at the same strength as raising one. "We have end-
 to-end proof of the chain but it is just an app-layer issue"
 must cite `file:line` for the application-layer enforcement
 *and* an unblock condition that survives the audit. Severity
-is not a one-way street. (Added 2026-09-25 after a scan
+is not a one-way street. Keep the original hypothesis and the
+disproof evidence in the notes; do not erase a lead merely because
+it was downgraded. Treat config flags, deployment advice, and
+expected usage as preconditions until their security effect is
+demonstrated in code. (Added 2026-09-25 after a scan
 downgraded a CRITICAL RCE to "design boundary" on a single
 unverified guard.)
 
@@ -234,14 +296,20 @@ the Evidence. The remediation is the smallest change that closes
 the delta. **Why existing controls missed it** is required —
 without it, the report is a bug, not a fix proposal.
 
+For configuration-dependent findings, separate default behavior from
+supported/common deployment behavior. State the exact enabling
+configuration and who can reach the feature once enabled; do not
+silently downgrade a finding because its precondition is not the
+default.
+
 ## How to use the notes file
 
 Copy `templates/audit-notes.md` into the audit workspace, rename
 it (e.g. `notes-{target}.md`), and edit it every round.
 
-The notes file is the entire canonical state of this audit. There
-is no schema, no IDs, no transactions, no generator. Sections
-evolve as the audit evolves — the model is allowed to add new
+The notes file is the entire canonical state of this audit. A small
+schema applies to the machine-readable pairing and coverage ledgers;
+other sections evolve as the audit evolves — the model is allowed to add new
 sections when needed (e.g. a "Chain hypothesis" section when a
 chain search is running). A section the audit no longer needs is
 deleted.
@@ -254,9 +322,9 @@ The notes file must contain, for every dangerous primitive,
 a **Coverage paragraph**: the protocol entries that reach it
 (form field / reply marker / template include / event handler
 / sub-protocol marker / RPC field) and the verification status
-of each (`verified` / `disproven` / `NEEDS-RUNTIME`). Coverage
-is the only way to prove the chain table is complete; the
-Coverage paragraph is how that proof is made inspectable.
+of each (`verified` / `disproven` / `NEEDS-RUNTIME`). Coverage makes
+the entry inventory inspectable; it is evidence to review, not proof
+that every entry has been found.
 
 ## When to load a reference
 
@@ -284,25 +352,31 @@ Vuln-class:
 - `references/vuln-classes/{authz,injection,deserialization,
   path_traversal,ssrf,crypto,race_condition,cross_service_trust}.md`
 
-Load a vuln-class reference when the model has named the bug
-class and wants confirmation on where else to look, what
-disproofs often fail, and how to think about the permission
-delta. Do not load one to "browse." A model that loads all eight
-references to "be thorough" is not auditing, it is reading.
+During Scope, load `authz.md` and `cross_service_trust.md` as the
+baseline lenses, even if the initial hypothesis names another class.
+Load other vuln-class references when the architecture or evidence
+suggests them. These references should help recognize classes, not
+only confirm a class already named. Do not load all references to
+"be thorough"; choose by the baseline lenses and target evidence.
 
 ## When to call a sub-agent
 
 Use a sub-agent for:
 
-- **Independent review.** Hand the notes file and the code under
-  review to a sub-agent with no prior context. Independent review
-  is corroboration, not proof. Agreement increases confidence but
-  does not promote a hypothesis. Promotion still requires
-  sufficient code or runtime evidence. Disagreement means the
-  claim needs more verification.
+- **Independent review.** Give a sub-agent minimal target context
+  and relevant code, without the author's conclusion. For a downgrade
+  review, provide the original hypothesis but withhold the downgrade
+  rationale until the reviewer has formed a view. Independent review
+  is corroboration, not proof. Agreement does not promote a hypothesis;
+  promotion still requires sufficient code or runtime evidence.
+  Disagreement means the claim needs more verification.
 - **Bounded parallel searches.** Variant hunts and chain
   searches that can run with no shared state from the main
-  audit.
+  audit. Require output to include searched surface, search strategy,
+  and `file:line` for every conclusion; a timeout or unsupported external
+  claim means the subtask is incomplete. Re-run a smaller bounded task
+  serially when budget allows. Independently inspect high-impact SAFE,
+  `N/A`, and downgrade conclusions.
 - **Experiments in a clean harness.** A PoC that needs a
   controlled environment the model cannot guarantee locally —
 but only inside isolation the Harness provides. The Skill
@@ -328,17 +402,34 @@ chain passed through the host shell.
 
 ## Stopping the audit
 
-Stop when one of:
+Do not stop solely because Remaining Questions is empty, because
+the model feels saturated, or because another round seems unlikely
+to add a finding. Before Report, close the following checklist:
 
-- The notes file's **Remaining Questions** section is empty.
-- The model is generating narrower variants without producing
-  a new permission or capability delta — saturation reached.
-- The next round of Verify would only re-confirm existing
-  Verified Facts.
+- All four baseline categories have an evidence-backed `HUNTED`
+  record or a justified `N/A` with two distinct query/result records; add a
+  pairing row for each discovered source-to-consumer relationship.
+- Every identified dangerous sink and security decision point has
+  an entry/producer inventory, relevant consumers, and a status.
+- Every claimed guard has a Guard Evaluation Ledger row with the
+  exact expression, attacker input type, evaluated result, and
+  protected consumer.
+- Every downgraded or disproved high-impact hypothesis retains its
+  original statement and the evidence that killed it.
+- Configuration-dependent chains record the default state and at
+  least one supported/common deployment state; a disabled-by-default
+  feature is not itself a disproof.
+- A final review searches for unverified `[prior]` claims and
+  universal negatives, and challenges each `N/A` and `DISPROVED`
+  row. Use an independent cold-start reviewer when available; if
+  unavailable, do a separate pass from the notes and code, starting
+  from the missed-class lenses rather than existing findings.
 
-Do not stop because the model is uncertain. A hypothesis without
-new evidence is a hypothesis that needs more evidence, not
-silence.
+After this checklist closes, stop when additional work produces no
+new reachable capability delta. Record remaining uncertainty as
+`NEEDS-RUNTIME` or an explicit limitation rather than silently
+calling the target safe. A hypothesis without new evidence is not a
+finding, but an unclosed category is not saturation either.
 
 **Universal-negative guardrail.** Reports containing universal-
 negative conclusions ("no X in Y", "X is safe", "Y has no
@@ -355,17 +446,16 @@ read.)
 - It does not maintain a Search Ledger, an Attack Graph, or a
   Coverage Ledger. Those were the v2.x design and were
   removed in the v3.0 collapse.
-- It does not provide a CLI, a sandbox, or the v2.x audit
-  Runtime (L1-L7 phase catalog, search ledger, attack graph,
-  scheduler, phase gates). What it does provide is three
-  Runtime-side enforcement primitives that close the two
-  failure modes identified in the 2026-09-25 React 19 long-
-  chain post-mortem: `runtime/validate_notes.py` checks the
-  pairing-table schema at write-time; `runtime/check_skill_
-  loaded.py` checks the session-start load; `runtime/
-  regression.py` runs the two against every fixture.
-  Stdlib-only. ~310 lines total. None of them is the v2.x
-  Runtime.
+- It does not provide a sandbox or the v2.x audit Runtime
+  (L1-L7 phase catalog, search ledger, attack graph, scheduler,
+  phase gates). It does provide three lightweight runtime checks:
+  `runtime/validate_notes.py` checks pairing-table and ledger
+  structure; `runtime/check_skill_loaded.py` checks the session-start
+  load; `runtime/regression.py` checks fixtures. They can reject
+  missing fields and undeclared categories, but cannot verify that a
+  search was actually performed or that the inventory is complete.
+  A structurally valid notes file is not a validated security
+  conclusion.
 - It does not enforce phases, gates, transitions, or
   approvals. The reviewer enforces discipline.
 - It does not own IDs, schemas, transactions, or generators.
@@ -376,56 +466,75 @@ read.)
 
 ### Hard Gate: Synthesize stage cannot be skipped
 
-Report stage cannot start until the audit notes file contains
-a non-empty pairing table. Every row pairs a **trust-source**
+Report stage cannot start until the audit notes file contains a
+pairing table, a class-coverage ledger, and a Guard
+Evaluation Ledger. Every pairing row connects a **trust-source**
 with a **trust-consumer**:
 
 ```text
 trust-source    : some component produces / writes / trusts value X
-trust-consumer  : some component reads / consumes X but lacks a
-                  fresh authorization check on X
+trust-consumer  : some component reads / consumes X; record whether
+                  its independent check covers X and the resulting action
 attacker reach  : attacker can drive X from trust-source to
                   trust-consumer
 ```
 
-Three pairings are mandatory whenever they exist in the target.
-Each pair is the abstract pattern of a specific vulnerability
-class; the per-class reference has the detailed methodology.
+Four baseline lenses are mandatory. Record each in `class_coverage`
+as `HUNTED` or `N/A`; an `N/A` needs two distinct absence queries,
+their results, and a reason. Add pairing rows for relationships discovered
+within those categories.
+Do not infer that a category is absent because it did not arise from
+the initial audit strategy. Each category is an abstract pattern;
+the per-class reference has detailed methodology.
 
-1. **callback x dangerous sink.** A plugin / event / template
+1. **security-sensitive field write x authentication/authorization
+   consumer.** A low-privilege or less-trusted path writes a field
+   that later changes login, identity, ownership, role, tenant, or
+   permission decisions. Compare input types and field-level access
+   controls across every API reaching the same write primitive. See
+   `references/vuln-classes/authz.md`.
+
+2. **identity assertion x trust or access-control decision.** A
+   header, PROXY-protocol value, DNS/PTR result, token, peer identity,
+   or other asserted identity reaches an ACL or authorization
+   decision. Record who may assert it and whether the consumer
+   independently verifies it. This includes trust decisions within
+   a single daemon, not only between services. See
+   `references/vuln-classes/cross_service_trust.md`.
+
+3. **callback x dangerous sink.** A plugin / event / template
    callback returns a value (or has its return persisted); a
    `unserialize` / `include` / `eval` / file-write /
    permission-decision sink later consumes that value. See
    `references/vuln-classes/deserialization.md` and
    `references/vuln-classes/injection.md`.
 
-2. **state write x cross-endpoint state consumer.** Endpoint
-   A writes state under A's authorization; endpoint B reads
-   that state and acts on it without re-checking
-   authorization. See `references/vuln-classes/authz.md` and
+4. **state write x cross-endpoint state consumer.** Endpoint A
+   writes state under A's authorization; endpoint B reads that state
+   and acts on it without re-checking authorization. See
+   `references/vuln-classes/authz.md` and
    `references/discovery.md` (Trace across endpoints).
 
-3. **cross-service trust header x downstream consumer.** An
-   internal service sets a header (`X-User-Id`,
-   `X-Tenant-Id`, internal API key, internal JWT); a
-   downstream service honors that header without independent
-   verification. See
-   `references/vuln-classes/cross_service_trust.md`.
+Each category must appear in the machine-readable `class_coverage`
+ledger, including when marked `N/A`. Pairing rows name the category,
+source, consumer, attacker reach, status, evidence, and rationale. Every
+guard claimed to protect a paired consumer must also have a Guard
+Evaluation Ledger entry. Category presence is a completeness prompt,
+not proof that the category was truthfully or fully searched.
 
-Each row is recorded as `upgraded` (per-hop `file:line`
-proof) or `DISPROVED` (with the hop that killed it). "The
-bundled component happens to be clean" is not a permitted
-escape - that is the audit failure the Hard Gate exists to
-prevent.
+Each non-N/A row is `upgraded`, `DISPROVED`, or `NEEDS-RUNTIME`.
+`DISPROVED` requires a cited control or hop and the concrete
+attacker input against which it was evaluated. `N/A` requires a
+reason and two distinct query/result records in the class-coverage
+ledger. "The bundled component happens to be clean" is not a
+permitted escape.
 
-The pairing table is enforced at the audit-output level by
-`runtime/validate_notes.py`, which validates the table against
-`schemas/pairing-table.schema.json` and checks the Coverage
-paragraph marker. Exit 0 means the format is correct;
-non-zero means Report cannot start. The model is expected to
-write the table; the validator catches missing or malformed
-ones. The reviewer judges correctness; the validator is the
-gate.
+Before Report, run `python runtime/validate_notes.py path/to/notes.md`.
+The tables are checked by `runtime/validate_notes.py` for required
+categories, fields, and evidence shapes. Exit 0 means those
+structural requirements passed; it does not certify the truth or
+completeness of a search. The reviewer still challenges the category
+inventory, every `N/A` and `DISPROVED` row, and every guard verdict.
 
 For end-to-end verification across sessions, `runtime/regression.py`
 runs validate-notes and check-skill-loaded against every
@@ -433,8 +542,8 @@ fixture in `fixtures/`. A regression failure means the
 framework's expected output has drifted and the audit prompt
 is operating against a wrong target shape.
 
-This Hard Gate was added in v3.0.x after the DokuWiki 2026-07-
-14a audit produced CVE-class findings (Issue #4752, CWE-502)
-that the original four-stage loop missed. The miss was caused
-by skipping chain synthesis; the Hard Gate prevents the next
-miss.
+This Hard Gate was added after the DokuWiki 2026-07-14a audit
+missed a cross-endpoint CWE-502 chain. Later FlaskBB, rsync, and
+GLPI audits showed that a non-empty table alone is insufficient:
+category coverage, guard semantics, and downgrade evidence also
+need explicit records and reviewer challenge.

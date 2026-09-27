@@ -37,6 +37,21 @@ whether it holds. Common disproofs:
 - "The check is in the framework layer." Read the framework
   layer. Often the framework delegates back to the application
   and the application overrides it.
+- "The guard exists." Copy its exact predicate and evaluate it with
+  the attacker's parsed types and values. A type mismatch, coercion,
+  null value, or unexpected collection member can make a present
+  check ineffective.
+- "The feature is disabled by default" or "the docs recommend a
+  trusted proxy." Treat that as a precondition. Trace what happens
+  when the documented/supported configuration enables the feature,
+  identify who can assert the trusted value, and follow it to the
+  consumer's security decision.
+
+For any `DISPROVED` or downgrade, retain the original hypothesis and
+record the control or hop that defeats it with `file:line`, the
+attacker input used to evaluate the control, and any configuration
+that would unblock the chain. Unverified documentation or upstream
+behavior is `[prior]`, not disproof evidence.
 
 **Evidence collection.** When static reading is not enough, run
 the experiment. The first experiment that fails proves nothing —
