@@ -1,0 +1,33 @@
+23: function mini_poi_store_cache(string $cache_path, string $page_text): void {
+24:     $parser_calls = mini_poi_parse($page_text);
+25:     // VULN: serialize the parser calls including any objects the
+26:     // plugin returned from handle(). No filter on return type.
+27:     file_put_contents($cache_path, serialize($parser_calls));
+28: }
+29:
+30: function mini_poi_parse(string $text): array {
+31:     // Naive parser: every line matching /^!plugin!\s*(.*)$/ is
+32:     // routed to the plugin's handle() and the return value
+33:     // becomes a parser call.
+34:     $calls = [];
+35:     foreach (preg_split('/\R/', $text) as $line) {
+36:         if (preg_match('/^!plugin!\s*(.*)$/', $line, $m)) {
+37:             $plugin = new MiniPoiPlugin();
+38:             $ret = $plugin->handle($m[1]);
+39:             // VULN: zero validation of $ret's shape.
+40:             $calls[] = ['plugin', [$ret]];
+41:         }
+42:     }
+43:     return $calls;
+44: }
+45:
+46: function mini_poi_serve_page(string $cache_path): void {
+47:     // VULN: unserialize without allowed_classes. The plugin can
+48:     // smuggle an object through the cache file.
+49:     $instructions = unserialize(file_get_contents($cache_path));
+50:     foreach ($instructions as $call) {
+51:         [$tag, $args] = $call;
+52:         // ... rendering elided for fixture brevity
+53:         echo "render: $tag\n";
+54:     }
+55: }

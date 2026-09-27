@@ -1,80 +1,69 @@
-# Finding -- mini-poi deserialization object injection
+# Finding — unsafe deserialization across the plugin cache boundary
 
-> Reference finding for the mini-poi fixture. The fixture is
-> an illustrative reproduction of DokuWiki Issue #4752
-> (CWE-502), not a real advisory.
+> Reference finding for the mini-poi fixture. It demonstrates a conditional
+> object-injection path, not a complete remote-code-execution exploit.
 
 ## Summary
 
-A user with permission to publish page text can have a
-plugin's `handle()` method return an arbitrary object. That
-object is `serialize()`-ed into a cache file and
-`unserialize()`-d by the next request to serve the page.
-Without `[allowed_classes => false]`, the object is fully
-instantiated and `__wakeup` runs, achieving arbitrary code
-execution on the server.
+`mini_poi_serve_page()` deserializes cached parser calls without an
+`allowed_classes` restriction. If an attacker can influence a plugin's
+`handle()` return value into an object, that object can cross the cache
+boundary and be instantiated on a later request. The checked-in plugin
+returns an array, so the source alone does not show that an ordinary page
+editor can control the return type. Code execution additionally depends on a
+usable gadget class being loaded.
 
 ## Severity
 
-`critical` -- arbitrary code execution under the user
-context of the web server. Reachable from any role allowed
-to edit a page containing the `!plugin!` marker.
+Exploitability and impact are deployment-dependent. Treat remote object
+injection as unconfirmed until attacker control of the plugin return is
+established; claim code execution only after identifying a reachable gadget
+or equivalent effect.
 
 ## Location
 
-- `fixtures/mini-poi/index.php:38` -- `serialize($parser_calls)`.
-- `fixtures/mini-poi/index.php:43` -- `unserialize(...)`.
-- `fixtures/mini-poi/plugin.php:13` -- untyped `handle()` return.
+- `fixtures/mini-poi/index.php:27` — serializes parser calls into the cache.
+- `fixtures/mini-poi/index.php:49` — deserializes the cache without a class
+  restriction.
+- `fixtures/mini-poi/index.php:38-40` — stores the plugin return in the
+  serialized value.
+- `fixtures/mini-poi/plugin.php:13-19` — the current handler returns `mixed`
+  by declaration but the shipped implementation returns an array.
 
 ## Preconditions
 
-- Attacker state: any role with edit permission on a page.
-- System state: standard deployment of mini-poi; no special
-  configuration required.
+- The attacker can cause a plugin handler to return an attacker-selected
+  object, for example by controlling a plugin implementation or an object
+  returned from attacker-controlled plugin input. Page-edit permission alone
+  does not establish this precondition in the checked-in fixture.
+- For code execution, the later request must load a class with a usable
+  deserialization gadget whose effects the attacker can influence.
 
 ## Attack path
 
-1. Attacker installs or modifies a plugin whose `handle()`
-   returns an object with a `__wakeup` that does something
-   dangerous. (`fixtures/mini-poi/plugin.php:13` has no
-   return-type contract; the application does not constrain
-   it.)
-2. Attacker edits a page containing `!plugin! <anything>`.
-   `index.php:23` routes the line to `MiniPoiPlugin::handle()`.
-3. `index.php:38` `serialize()`s the parser-calls array --
-   which contains the plugin's return value -- into the
-   cache file.
-4. Any subsequent page render reads the cache file and
-   `unserialize()`s it (`index.php:43`). The object is
-   instantiated; `__wakeup` runs.
-5. Server is now running attacker code under the web-server
-   user.
+1. An attacker-controlled or otherwise untrusted plugin path returns an
+   object from `MiniPoiPlugin::handle()`.
+2. A page containing `!plugin! ...` reaches `handle()` at
+   `index.php:35-40`; the return value is stored in the parser calls.
+3. `index.php:27` serializes those calls to the cache file.
+4. A later request reads that file and invokes unrestricted `unserialize()`
+   at `index.php:49`, instantiating the object. A loaded gadget may then
+   produce a security impact.
 
-## Evidence
+## Evidence and limitations
 
-- `fixtures/mini-poi/index.php:38` -- `serialize($parser_calls)`
-  with no type filter.
-- `fixtures/mini-poi/index.php:43` -- `unserialize(...)` with
-  no `[allowed_classes => false]`.
-- Static end-to-end proof: attacker controls
-  `MiniPoiPlugin::handle()` return value -> serialized into
-  cache -> unserialized in next request.
-
-## Why existing controls missed it
-
-The application assumed the plugin's `handle()` returns a
-plain instruction (string / array). It never validated that
-assumption. The cache file was treated as opaque bytes
-inside its own trust boundary, but the plugin API broke
-that boundary by allowing attacker-controlled object
-shapes into the serialized bytes.
+- `E000001` captures the cache writer and deserializer, including the
+  unrestricted call at `index.php:49`.
+- `E000002` captures the plugin handler's `mixed` return declaration and
+  current array result.
+- The fixture does not contain an attacker-controlled plugin implementation
+  or a gadget class. Those are deployment preconditions, not facts proven by
+  this sample.
 
 ## Remediation
 
-- Add `[allowed_classes => false]` to the `unserialize()`
-  call at `fixtures/mini-poi/index.php:43`. This rejects
-  every object on the read path regardless of who wrote
-  it.
-- Add a return-type contract to `MiniPoiPlugin::handle()`
-  -- `array<string, mixed>` is enough -- and validate at
-  the call site (`index.php:30`).
+- Avoid native object deserialization for cache data. Prefer a data-only
+  format; if native serialization must remain, use an explicit class allowlist
+  and validate the decoded structure before use.
+- Constrain and validate the plugin return type at the call site. A declared
+  return type alone is insufficient if it permits arbitrary object values.

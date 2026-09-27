@@ -4,10 +4,9 @@ A prompt-led Skill for security audits. The model reasons; the
 Harness executes; this Skill is the playbook the model follows.
 
 The audit state lives in **one Markdown file** that the model edits
-every round (`templates/audit-notes.md`). The small runtime checks
-in this repository validate output structure and skill freshness;
-they do not prove that the audit's inventory or conclusions are
-semantically complete.
+every round (`templates/audit-notes.md`). The runtime checks validate
+output structure and skill freshness; the evidence helper captures
+bounded source reads and searches. None proves semantic completeness.
 
 ## When to load this Skill
 
@@ -34,9 +33,9 @@ takes milliseconds.
 
 The check uses `runtime/skill_manifest.json`. After editing
 any tracked file, run with `--refresh` to recompute hashes.
-The list of tracked files is in `runtime/__init__.py`'s
-docstring; the manifest covers every file the agent must
-have in context to audit correctly.
+The list of tracked files is in `runtime/skill_manifest.json`;
+it covers every instruction, reference, template, and schema file
+the agent must have in context to audit correctly.
 
 ## The five things this Skill teaches
 
@@ -109,9 +108,10 @@ decision lenses, even if the user named a different bug class:
   or callback output reach deserialization, code execution, file,
   permission, or other security-sensitive consumers?
 
-Put each lens in the notes file as `HUNTED` or `N/A`, with the
-strategy and evidence. `N/A` is a conclusion to support, not a blank
-cell. Load the relevant class references while scoping, before
+Put each lens in the notes file as `NOT_CHECKED`, `IN_PROGRESS`,
+`HUNTED`, `N/A`, or `NEEDS-RUNTIME`, with the strategy and evidence.
+`N/A` is a conclusion to support, not a blank cell; unreviewed work
+must stay visibly unreviewed. Load the relevant class references while scoping, before
 Discover, so the model does not need to name an unfamiliar class
 before receiving the checklist that would help it recognize the
 class. Treat these lenses as a baseline, not an exhaustive list; add
@@ -125,6 +125,20 @@ enabled path is safe. Mark unverified external claims about intended
 behavior, documentation, or upstream fixes as `[prior]`; do not use
 them to disprove a hypothesis until verified against the target or
 an authoritative source.
+
+**Attention budget.** Before deep dives, assign one bounded coverage
+pass to each baseline lens. After those passes, rank the work queue by
+potential permission delta, attacker reachability, and uncertainty.
+At the start of each work cycle, select one queue item and make it the
+only active task. Define its next action, budget unit, and stop condition
+before using tools. Finish or explicitly defer it before selecting another.
+Record tangents as queued items with a one-line impact reason; do not follow
+them immediately. Reserve a final pass for challenging `N/A`, `DISPROVED`,
+and high-impact guard conclusions; use that reserve for a new branch only
+when evidence reveals a materially higher-impact surface. Before Report,
+every item must be `completed` or `deferred`; a deferred item needs a reason
+and a visible coverage limitation. If a time or token limit prevents a pass,
+record `NOT_CHECKED` and the limitation instead of marking it `N/A`.
 
 End Scope when the **Objective** and **Attack Surface** sections
 of the notes file are written, the highest-value target is named,
@@ -143,12 +157,14 @@ the **Hypotheses** section, one per hypothesis, written so the
 disproof is named alongside.
 
 Balance sink-driven searches with the baseline authorization and
-trust-decision lenses. Allocate effort by potential permission
-delta, not by whether code looks central, admin-only, or easy to
-grep. A release-note/CVE checklist is one search strategy, not a
-scope boundary. Treat security-related `TODO`, `FIXME`, and `XXX`
-comments as review signals; they do not mean the issue is already
-understood or safe to skip.
+trust-decision lenses. Allocate deep-dive effort by potential
+permission delta, reachability, and uncertainty, not by whether code
+looks central, admin-only, or easy to grep. Use the Work Queue in the
+notes: one active task, an explicit stop condition, and a recorded
+budget unit for each task. A new tangent enters the queue; it does not
+silently replace the active task. A release-note/CVE checklist is one
+search strategy, not a scope boundary. Treat security-related `TODO`,
+`FIXME`, and `XXX` comments as review signals, not completed analysis.
 
 ### Verify
 
@@ -406,9 +422,11 @@ Do not stop solely because Remaining Questions is empty, because
 the model feels saturated, or because another round seems unlikely
 to add a finding. Before Report, close the following checklist:
 
-- All four baseline categories have an evidence-backed `HUNTED`
-  record or a justified `N/A` with two distinct query/result records; add a
-  pairing row for each discovered source-to-consumer relationship.
+- All four baseline categories have an explicit status. `HUNTED` needs a
+  captured source read; `N/A` needs a reason and two distinct zero-match
+  searches. `NOT_CHECKED`, `IN_PROGRESS`, and `NEEDS-RUNTIME` may remain only
+  as explicit coverage limitations; do not claim complete or safe coverage
+  while any remain.
 - Every identified dangerous sink and security decision point has
   an entry/producer inventory, relevant consumers, and a status.
 - Every claimed guard has a Guard Evaluation Ledger row with the
@@ -424,6 +442,11 @@ to add a finding. Before Report, close the following checklist:
   row. Use an independent cold-start reviewer when available; if
   unavailable, do a separate pass from the notes and code, starting
   from the missed-class lenses rather than existing findings.
+- The work queue has at least one task for each baseline category; no task
+  is `active` or `queued`. Completed tasks cite captured evidence; deferred
+  tasks state why they stopped and which coverage remains limited.
+- A `final_review` task is completed after challenging the N/A, DISPROVED,
+  and high-impact guard conclusions.
 
 After this checklist closes, stop when additional work produces no
 new reachable capability delta. Record remaining uncertainty as
@@ -448,18 +471,23 @@ read.)
   removed in the v3.0 collapse.
 - It does not provide a sandbox or the v2.x audit Runtime
   (L1-L7 phase catalog, search ledger, attack graph, scheduler,
-  phase gates). It does provide three lightweight runtime checks:
+  phase gates). It provides three lightweight runtime checks and one
+  bounded evidence-capture helper:
   `runtime/validate_notes.py` checks pairing-table and ledger
   structure; `runtime/check_skill_loaded.py` checks the session-start
-  load; `runtime/regression.py` checks fixtures. They can reject
-  missing fields and undeclared categories, but cannot verify that a
-  search was actually performed or that the inventory is complete.
+  load; `runtime/regression.py` checks fixtures. The validator checks
+  work-queue closure, cited evidence artifacts, and selected ledger
+  invariants. The logger records only reads and searches made through it;
+  neither can prevent other tools from being used or prove the inventory
+  is complete.
   A structurally valid notes file is not a validated security
   conclusion.
-- It does not enforce phases, gates, transitions, or
-  approvals. The reviewer enforces discipline.
-- It does not own IDs, schemas, transactions, or generators.
-  The notes file is the only state.
+- It does not enforce phases or control which tool the model uses.
+  The queue and evidence checks make omissions visible at the Report gate;
+  the reviewer still enforces semantic discipline.
+- It does not own workflow state in a database. The notes file is the
+  canonical audit state; the evidence ledger stores captured outputs and
+  hashes as supporting artifacts.
 - It does not write architecture-eval tests. The audit is
   measured by the findings it produces, not by whether the
   implementation of the audit was correct.
@@ -467,9 +495,9 @@ read.)
 ### Hard Gate: Synthesize stage cannot be skipped
 
 Report stage cannot start until the audit notes file contains a
-pairing table, a class-coverage ledger, and a Guard
-Evaluation Ledger. Every pairing row connects a **trust-source**
-with a **trust-consumer**:
+pairing table, a class-coverage ledger, a closed work queue with a completed
+`final_review` task, and a Guard Evaluation Ledger. Every pairing row
+connects a **trust-source** with a **trust-consumer**:
 
 ```text
 trust-source    : some component produces / writes / trusts value X
@@ -480,9 +508,9 @@ attacker reach  : attacker can drive X from trust-source to
 ```
 
 Four baseline lenses are mandatory. Record each in `class_coverage`
-as `HUNTED` or `N/A`; an `N/A` needs two distinct absence queries,
-their results, and a reason. Add pairing rows for relationships discovered
-within those categories.
+as `NOT_CHECKED`, `IN_PROGRESS`, `HUNTED`, `N/A`, or `NEEDS-RUNTIME`.
+An `N/A` needs two distinct captured zero-match searches and a reason.
+Add pairing rows for relationships discovered within those categories.
 Do not infer that a category is absent because it did not arise from
 the initial audit strategy. Each category is an abstract pattern;
 the per-class reference has detailed methodology.
@@ -525,15 +553,27 @@ not proof that the category was truthfully or fully searched.
 Each non-N/A row is `upgraded`, `DISPROVED`, or `NEEDS-RUNTIME`.
 `DISPROVED` requires a cited control or hop and the concrete
 attacker input against which it was evaluated. `N/A` requires a
-reason and two distinct query/result records in the class-coverage
-ledger. "The bundled component happens to be clean" is not a
+reason and two distinct captured zero-match searches in the
+class-coverage ledger. Re-running the same search command does not count
+as two checks. "The bundled component happens to be clean" is not a
 permitted escape.
 
-Before Report, run `python runtime/validate_notes.py path/to/notes.md`.
-The tables are checked by `runtime/validate_notes.py` for required
-categories, fields, and evidence shapes. Exit 0 means those
-structural requirements passed; it does not certify the truth or
-completeness of a search. The reviewer still challenges the category
+Capture source searches and bounded reads with `runtime/evidence_log.py`
+and cite their IDs in the JSON ledger. Keep the ledger and artifacts in
+the private audit workspace; do not commit target source excerpts. Treat
+uncaptured tool output as exploratory unless the notes preserve a reviewable
+artifact. Before Report, run:
+
+```text
+python runtime/validate_notes.py path/to/notes.md --evidence-ledger path/to/evidence.jsonl
+```
+
+The validator checks cited IDs and hashes, zero-match search results,
+captured reads for hunted categories and pairing rows, guard expressions
+against cited source reads, and work-queue closure. Exit 0 means these
+structural requirements passed; it does not certify search truth or
+completeness. The logger sees only use through that helper, and its local
+files are not tamper-proof. The reviewer still challenges category
 inventory, every `N/A` and `DISPROVED` row, and every guard verdict.
 
 For end-to-end verification across sessions, `runtime/regression.py`
