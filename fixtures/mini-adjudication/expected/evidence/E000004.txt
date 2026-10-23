@@ -1,0 +1,28 @@
+167: final class ShareService
+168: {
+169:     public function __construct(
+170:         private Store $store,
+171:     ) {
+172:     }
+173:
+174:     /**
+175:      * Shape B. A claim says this path does not check the share token.
+176:      * It does check it, right here, before the session is looked up.
+177:      */
+178:     public function download(string $shareToken, string $sessionToken): bool
+179:     {
+180:         $expected = $this->expectedTokenFor($shareToken);
+181:         if (!hash_equals($expected, $shareToken)) {
+182:             return false;
+183:         }
+184:         if ($this->store->sessionUser($sessionToken) === null) {
+185:             return false;
+186:         }
+187:         return true;
+188:     }
+189:
+190:     private function expectedTokenFor(string $shareToken): string
+191:     {
+192:         return hash('sha256', $shareToken);
+193:     }
+194: }

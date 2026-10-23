@@ -4,7 +4,7 @@
 This helper does not execute arbitrary shell commands. It supports only
 `rg` searches and bounded source-file reads, saving their output as an
 artifact and appending a JSONL record with the command, exit code, and
-SHA-256. The audit notes should cite these evidence IDs. This records
+SHA-256. The triage notes should cite these evidence IDs. This records
 tool use through this helper; it cannot detect searches performed through
 other tools or prevent a user from editing the log. Source paths are stored
 relative to the working directory and that directory is stored relative to
@@ -13,11 +13,11 @@ the ledger, avoiding absolute home-directory paths in committed fixtures.
 Usage:
 
     python runtime/evidence_log.py search \
-      --ledger audit/evidence.jsonl --artifact-dir audit/evidence \
+      --ledger triage/evidence.jsonl --artifact-dir triage/evidence \
       --pattern 'trusted|proxy|verify' src/
 
     python runtime/evidence_log.py read \
-      --ledger audit/evidence.jsonl --artifact-dir audit/evidence \
+      --ledger triage/evidence.jsonl --artifact-dir triage/evidence \
       --path src/auth.py --start 10 --end 40
 """
 

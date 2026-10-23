@@ -1,0 +1,11 @@
+74: }
+75:
+76: /**
+77:  * The external authentication extension. It answers with the payload it
+78:  * wants stored, or an empty string when it has no opinion about the
+79:  * login attempt.
+80:  */
+81: interface ExternalAuth
+82: {
+83:     public function authenticate(string $username, string $password): string;
+84: }

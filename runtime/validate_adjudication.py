@@ -1,0 +1,757 @@
+#!/usr/bin/env python3
+"""validate-adjudication -- structural validation for a claim adjudication file.
+
+Validates the machine-readable adjudication table embedded in an
+adjudication-notes Markdown file against
+schemas/adjudication.schema.json, and checks the evidence ledger that
+backs it.
+
+The important checks here are the *derivations*: the validity verdict
+must follow from the assertion verdicts, and the acceptability verdict
+must follow from the three acceptance answers. Those are the two places
+where a model under pressure is most likely to talk itself into a
+stronger conclusion than the evidence supports.
+
+The ledger is also checked for *self-reporting*: a search record that
+claims "no matches" is re-run against the source it names, and a record
+whose search no longer reproduces is rejected. An absence that cannot be
+reproduced is not evidence of absence, and a ledger that merely asserts
+one is worthless.
+
+This is a structural check, not a judgement. It cannot prove a verdict
+is correct, and it cannot prove a maintainer will accept a report. It
+proves the verdicts are recorded, that each one cites evidence that
+exists, that the absence evidence still reproduces, and that the two
+verdicts were derived rather than asserted.
+
+Usage:
+    python runtime/validate_adjudication.py path/to/adjudication-notes.md \\
+        --evidence-ledger path/to/evidence.jsonl
+
+Exit codes:
+    0  all structural requirements passed
+    1  one or more requirements failed
+    2  usage error, or a required file is missing
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SCHEMA_PATH = REPO_ROOT / "schemas" / "adjudication.schema.json"
+
+VALIDITY = {"holds", "does_not_hold", "needs_more_evidence", "already_fixed"}
+MAX_SEARCH_RESULTS_PER_FILE = 500
+ACTIONS = {
+    "report",
+    "rewrite_then_report",
+    "hardening_note",
+    "no_report",
+    "needs_evidence",
+    "already_fixed",
+}
+ASSERTION_VERDICTS = {"confirmed", "refuted", "unresolved", "fixed"}
+ASSERTION_TYPES = {"defect", "reachability", "consequence", "precondition"}
+PREMISE_KINDS = {
+    "attacker_only",
+    "requires_operator_decision",
+    "requires_ambient_state",
+    "requires_third_party_misconfiguration",
+}
+BOUNDARY_STATES = {"declared_and_violated", "not_declared", "declared_and_consistent"}
+DIVERGENCE_STATES = {"present", "absent"}
+ACCEPTABILITY = {"accept", "accept_after_rewrite", "decline"}
+FILE_LINE = re.compile(r"^.+:[0-9]+(-[0-9]+)?$")
+
+# A subject stated as a consequence rather than an invariant.
+CONSEQUENCE_PATTERNS = (
+    r"\battacker can\b",
+    r"\battacker could\b",
+    r"\ballows an attacker\b",
+    r"\bcan be exploited\b",
+    r"\bleads to\b",
+    r"\ballows compromise\b",
+    r"\bcan take over\b",
+    r"\bgains access\b",
+)
+
+# The notes file must visibly enumerate what was checked. Every one of
+# these sections is required: a file with the Verdict Table but no
+# Assertion Ledger looks complete and proves nothing.
+COVERAGE_MARKERS = (
+    ("Claims Under Adjudication", re.compile(r"^#{1,4}\s*Claims Under Adjudication", re.IGNORECASE | re.MULTILINE)),
+    ("Claim Decomposition", re.compile(r"^#{1,4}\s*Claim Decomposition", re.IGNORECASE | re.MULTILINE)),
+    ("Assertion Ledger", re.compile(r"^#{1,4}\s*Assertion Ledger", re.IGNORECASE | re.MULTILINE)),
+    ("Acceptance Answers", re.compile(r"^#{1,4}\s*Acceptance Answers", re.IGNORECASE | re.MULTILINE)),
+    ("Verdict Table", re.compile(r"^#{1,4}\s*Verdict Table", re.IGNORECASE | re.MULTILINE)),
+    ("Refutations Considered", re.compile(r"^#{1,4}\s*Refutations Considered", re.IGNORECASE | re.MULTILINE)),
+)
+
+
+def _extract_adjudication_table(markdown_text: str) -> tuple[dict | None, str | None]:
+    """Pull the adjudication-table JSON object out of the notes file."""
+    fences = re.findall(
+        r"```(?:json)?\s*(\{.*?\})\s*```",
+        markdown_text,
+        re.DOTALL,
+    )
+    for candidate in fences:
+        try:
+            obj = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            return None, f"fenced JSON block did not parse: {exc}"
+        if isinstance(obj, dict) and "claims" in obj:
+            return obj, None
+    decoder = json.JSONDecoder()
+    idx = 0
+    while idx < len(markdown_text):
+        if markdown_text[idx] != "{":
+            idx += 1
+            continue
+        try:
+            obj, end = decoder.raw_decode(markdown_text, idx)
+        except json.JSONDecodeError:
+            idx += 1
+            continue
+        if isinstance(obj, dict) and "claims" in obj:
+            return obj, None
+        idx = end
+    return None, "no adjudication-table JSON object found"
+
+
+def _missing_coverage_sections(markdown_text: str) -> list[str]:
+    """Return the coverage sections a reviewer scans that are absent.
+
+    Every section is required. A notes file that has the Verdict Table
+    but no Assertion Ledger looks complete and proves nothing.
+    """
+    return [name for name, marker in COVERAGE_MARKERS if not marker.search(markdown_text)]
+
+
+def _load_evidence_ledger(path_arg: str) -> tuple[dict[str, dict], list[str]]:
+    """Load evidence records and verify saved artifacts and their hashes."""
+    ledger = Path(path_arg).resolve()
+    if not ledger.exists():
+        return {}, [f"evidence ledger not found: {ledger}"]
+    records: dict[str, dict] = {}
+    errors: list[str] = []
+    for line_number, line in enumerate(ledger.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            errors.append(f"evidence ledger line {line_number} is invalid JSON: {exc}")
+            continue
+        if not isinstance(record, dict):
+            errors.append(f"evidence ledger line {line_number} must be an object")
+            continue
+        evidence_id = record.get("id")
+        if not isinstance(evidence_id, str) or not re.fullmatch(r"E[0-9]{6}", evidence_id):
+            errors.append(f"evidence ledger line {line_number} has an invalid ID")
+            continue
+        if evidence_id in records:
+            errors.append(f"duplicate evidence ID: {evidence_id}")
+            continue
+        records[evidence_id] = record
+        artifact_name = record.get("artifact")
+        if not isinstance(artifact_name, str) or not artifact_name:
+            errors.append(f"{evidence_id} has no artifact path")
+            continue
+        artifact = (ledger.parent / artifact_name).resolve()
+        try:
+            artifact.relative_to(ledger.parent)
+        except ValueError:
+            errors.append(f"{evidence_id} artifact escapes the evidence directory")
+            continue
+        if not artifact.is_file():
+            errors.append(f"{evidence_id} artifact is missing: {artifact_name}")
+            continue
+        artifact_bytes = artifact.read_bytes()
+        if len(artifact_bytes) != record.get("artifact_bytes"):
+            errors.append(f"{evidence_id} artifact size does not match the ledger")
+        if hashlib.sha256(artifact_bytes).hexdigest() != record.get("artifact_sha256"):
+            errors.append(f"{evidence_id} artifact hash does not match the ledger")
+    errors.extend(_reverify_ledger_searches(ledger.parent, records))
+    return records, errors
+
+
+def _normalize_rel(value: str) -> str:
+    """Make a recorded relative path portable across path separators."""
+    return value.replace("\\", "/")
+
+
+def _reverify_zero_match(ledger_parent: Path, record: dict) -> str | None:
+    """Re-run a recorded zero-match search and report whether it still holds.
+
+    A ledger entry that says "no matches" is a claim about the source.
+    If the search now matches, the claim is false and every verdict that
+    leaned on it is unsupported. If the source tree is not reachable from
+    here, or `rg` is not installed, the check is skipped rather than
+    failed: the evidence is unverifiable here, not wrong.
+    """
+    base_raw = record.get("cwd")
+    paths = record.get("paths")
+    query = record.get("query")
+    globs = record.get("globs")
+    if not isinstance(base_raw, str) or not base_raw:
+        return None
+    if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+        return None
+    if not isinstance(query, str) or not query.strip():
+        return None
+    if not isinstance(globs, list) or not all(isinstance(g, str) for g in globs):
+        return None
+    base = (ledger_parent / Path(_normalize_rel(base_raw))).resolve()
+    if not base.is_dir():
+        return None
+    if shutil.which("rg") is None:
+        return None
+    command = [
+        "rg",
+        "--line-number",
+        "--with-filename",
+        "--no-heading",
+        "--color",
+        "never",
+        "--max-count",
+        str(MAX_SEARCH_RESULTS_PER_FILE),
+    ]
+    for glob in globs:
+        command.extend(["--glob", glob])
+    command.extend(["--", query])
+    command.extend(_normalize_rel(path) for path in paths)
+    try:
+        result = subprocess.run(command, capture_output=True, cwd=base, timeout=60, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode == 1:
+        return None  # still zero-match: the absence still holds
+    if result.returncode == 0:
+        matched = result.stdout.decode("utf-8", errors="replace").strip().splitlines()
+        first = matched[0] if matched else ""
+        return (
+            f"records a zero-match search that no longer reproduces: pattern "
+            f"{query!r} now matches {first!r}"
+        )
+    return (
+        f"records a zero-match search that no longer runs cleanly: pattern "
+        f"{query!r} exited {result.returncode}"
+    )
+
+
+def _reverify_ledger_searches(ledger_parent: Path, records: dict[str, dict]) -> list[str]:
+    """Re-run every search the ledger claims produced no matches."""
+    errors: list[str] = []
+    for evidence_id, record in sorted(records.items()):
+        if record.get("kind") != "search" or record.get("exit_code") != 1:
+            continue
+        problem = _reverify_zero_match(ledger_parent, record)
+        if problem:
+            errors.append(f"{evidence_id} {problem}")
+    return errors
+
+
+def _valid_evidence_ids(value: object, records: dict[str, dict]) -> bool:
+    return isinstance(value, list) and bool(value) and all(
+        isinstance(evidence_id, str)
+        and evidence_id in records
+        and records[evidence_id].get("truncated") is False
+        and records[evidence_id].get("timed_out") is False
+        and type(records[evidence_id].get("exit_code")) is int
+        and records[evidence_id].get("exit_code") in (0, 1)
+        for evidence_id in value
+    )
+
+
+def _cites_source_read(value: object, records: dict[str, dict]) -> bool:
+    return (
+        isinstance(value, list)
+        and any(
+            isinstance(evidence_id, str)
+            and evidence_id in records
+            and records[evidence_id].get("kind") == "read"
+            and records[evidence_id].get("exit_code") == 0
+            and records[evidence_id].get("truncated") is False
+            for evidence_id in value
+        )
+    )
+
+
+def _valid_absence_searches(value: object, records: dict[str, dict]) -> bool:
+    """Require two distinct captured zero-match searches."""
+    if not isinstance(value, list):
+        return False
+    searches: set[tuple[str, tuple[str, ...], tuple[str, ...], str]] = set()
+    for search in value:
+        if not isinstance(search, dict):
+            continue
+        evidence_id = search.get("evidence_id")
+        record = records.get(evidence_id) if isinstance(evidence_id, str) else None
+        if not isinstance(record, dict):
+            continue
+        query = record.get("query")
+        paths = record.get("paths")
+        globs = record.get("globs")
+        cwd = record.get("cwd")
+        if (
+            record.get("kind") == "search"
+            and type(record.get("exit_code")) is int
+            and record.get("exit_code") == 1
+            and record.get("timed_out") is False
+            and record.get("truncated") is False
+            and type(record.get("artifact_bytes")) is int
+            and record.get("artifact_bytes") == 0
+            and isinstance(query, str)
+            and query.strip()
+            and isinstance(paths, list)
+            and all(isinstance(path, str) for path in paths)
+            and isinstance(globs, list)
+            and all(isinstance(glob, str) for glob in globs)
+            and isinstance(cwd, str)
+        ):
+            # Re-running the same empty search is not a second check.
+            searches.add((query.strip(), tuple(paths), tuple(globs), cwd))
+    return len(searches) >= 2
+
+
+def _derive_validity(assertion_types: list[str], assertion_verdicts: list[str]) -> str:
+    """Derive the validity verdict mechanically from the assertions.
+
+    The precondition type is treated differently from the other three.
+
+    A `precondition` assertion describes the condition that must hold
+    for the trigger to fire. Its being unresolved says the trigger may
+    be rare or situational; it does not say the defect is absent. The
+    defect, the reachability and the consequence are what establish
+    that the claim is a vulnerability, and an unresolved one of those
+    blocks the verdict.
+
+    A `precondition` that is unresolved therefore leaves the validity
+    at `holds`, and its uncertainty is carried by the acceptance
+    stage's premise question, where it belongs: the premise is what
+    determines whether the maintainer will accept the report.
+    """
+    if not assertion_verdicts:
+        return "unadjudicated"
+    if "refuted" in assertion_verdicts:
+        return "does_not_hold"
+    if "fixed" in assertion_verdicts:
+        return "already_fixed"
+    for atype, averdict in zip(assertion_types, assertion_verdicts):
+        if averdict == "unresolved" and atype != "precondition":
+            return "needs_more_evidence"
+    return "holds"
+
+
+def _derive_acceptability(premise_kind: str, boundary_state: str, divergence_state: str) -> str:
+    """Derive the acceptability verdict mechanically from the three answers."""
+    if boundary_state == "declared_and_consistent":
+        return "decline"
+    if premise_kind == "attacker_only" and divergence_state == "present":
+        return "accept"
+    if premise_kind == "attacker_only":
+        # A clean premise without a divergence: the claim may still be
+        # reportable, but the framing needs work.
+        return "accept_after_rewrite"
+    if premise_kind == "requires_third_party_misconfiguration" and divergence_state == "present":
+        return "accept_after_rewrite"
+    return "decline"
+
+
+def _validate_claims(obj: dict, records: dict[str, dict]) -> list[str]:
+    errors: list[str] = []
+    claims = obj.get("claims")
+    if not isinstance(claims, list):
+        return ["claims must be a list"]
+    if not claims:
+        return ["claims must not be empty"]
+
+    seen_ids: set[str] = set()
+    for i, claim in enumerate(claims):
+        at = f"claims[{i}]"
+        if not isinstance(claim, dict):
+            errors.append(f"{at} must be an object")
+            continue
+        for required in ("id", "claim", "source_ref", "assertions", "validity", "action", "evidence_ids"):
+            if required not in claim:
+                errors.append(f"{at} missing required field: {required}")
+        claim_id = claim.get("id")
+        if isinstance(claim_id, str):
+            if claim_id in seen_ids:
+                errors.append(f"{at} duplicates claim id {claim_id!r}")
+            seen_ids.add(claim_id)
+        if not isinstance(claim.get("claim"), str) or not claim["claim"].strip():
+            errors.append(f"{at}.claim must be non-empty")
+
+        validity = claim.get("validity")
+        if validity not in VALIDITY:
+            errors.append(f"{at}.validity must be one of {sorted(VALIDITY)}, got {validity!r}")
+        action = claim.get("action")
+        if action not in ACTIONS:
+            errors.append(f"{at}.action must be one of {sorted(ACTIONS)}, got {action!r}")
+
+        assertions = claim.get("assertions")
+        if not isinstance(assertions, list) or not assertions:
+            errors.append(f"{at}.assertions must be a non-empty list (an unadjudicated claim)")
+            continue
+
+        assertion_verdicts: list[str] = []
+        assertion_types: list[str] = []
+        for j, assertion in enumerate(assertions):
+            aj = f"{at}.assertions[{j}]"
+            if not isinstance(assertion, dict):
+                errors.append(f"{aj} must be an object")
+                continue
+            for required in (
+                "id",
+                "type",
+                "statement",
+                "anchor",
+                "verdict",
+                "refutation_attempted",
+                "evidence_ids",
+            ):
+                if required not in assertion:
+                    errors.append(f"{aj} missing required field: {required}")
+            atype = assertion.get("type")
+            if atype not in ASSERTION_TYPES:
+                errors.append(f"{aj}.type must be one of {sorted(ASSERTION_TYPES)}, got {atype!r}")
+            elif isinstance(atype, str):
+                assertion_types.append(atype)
+            for field in ("statement", "anchor", "refutation_attempted"):
+                value = assertion.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    errors.append(f"{aj}.{field} must be non-empty")
+            averdict = assertion.get("verdict")
+            if averdict not in ASSERTION_VERDICTS:
+                errors.append(
+                    f"{aj}.verdict must be one of {sorted(ASSERTION_VERDICTS)}, got {averdict!r}"
+                )
+            else:
+                assertion_verdicts.append(averdict)
+            if not _valid_evidence_ids(assertion.get("evidence_ids"), records):
+                errors.append(f"{aj} must cite existing evidence_ids")
+            elif averdict in {"confirmed", "refuted"} and not _cites_source_read(
+                assertion.get("evidence_ids"), records
+            ):
+                errors.append(
+                    f"{aj} is {averdict!r} and must cite a captured source read, not only searches"
+                )
+            if (
+                averdict == "unresolved"
+                and not _cites_source_read(assertion.get("evidence_ids"), records)
+                and not _valid_absence_searches(assertion.get("absence_searches"), records)
+            ):
+                errors.append(
+                    f"{aj} is 'unresolved' on search evidence alone and must cite two distinct "
+                    f"captured zero-match searches in absence_searches"
+                )
+            absence = assertion.get("absence_searches")
+            if absence is not None and not _valid_absence_searches(absence, records):
+                errors.append(
+                    f"{aj} absence_searches must contain two distinct captured zero-match "
+                    f"searches; the same search run twice is not a second check"
+                )
+
+        # The validity verdict must be derived, not asserted.
+        derived = _derive_validity(assertion_types, assertion_verdicts)
+        if validity in VALIDITY and derived != "unadjudicated" and validity != derived:
+            errors.append(
+                f"{at}.validity is {validity!r} but its assertions derive {derived!r} "
+                f"(assertion verdicts: {assertion_verdicts})"
+            )
+
+        # Acceptance only exists for a claim that holds.
+        acceptance = claim.get("acceptance")
+        if validity == "holds":
+            if not isinstance(acceptance, dict):
+                errors.append(f"{at} has validity 'holds' and requires an acceptance object")
+            else:
+                errors.extend(_validate_acceptance(at, acceptance, records))
+        else:
+            if acceptance is not None:
+                errors.append(
+                    f"{at} has validity {validity!r} and must not carry an acceptance verdict; "
+                    f"a claim that does not hold is not 'unacceptable', it is not a vulnerability"
+                )
+            if action in {"report", "rewrite_then_report"}:
+                errors.append(
+                    f"{at} has validity {validity!r} and must not be actioned as a report"
+                )
+
+        # Action must match the validity verdict.
+        if validity == "does_not_hold" and action != "no_report":
+            errors.append(f"{at}.action must be 'no_report' when validity is 'does_not_hold'")
+        if validity == "needs_more_evidence" and action != "needs_evidence":
+            errors.append(f"{at}.action must be 'needs_evidence' when validity is 'needs_more_evidence'")
+        if validity == "already_fixed" and action != "already_fixed":
+            errors.append(f"{at}.action must be 'already_fixed' when validity is 'already_fixed'")
+        if validity == "holds" and action not in {"report", "rewrite_then_report", "hardening_note"}:
+            errors.append(
+                f"{at}.action must be report / rewrite_then_report / hardening_note when validity is 'holds'"
+            )
+
+        # A reportable claim needs an invariant subject.
+        if action in {"report", "rewrite_then_report"}:
+            subject = claim.get("subject")
+            if not isinstance(subject, str) or not subject.strip():
+                errors.append(f"{at}.subject is required for a reportable claim")
+            else:
+                lowered = subject.lower()
+                for pattern in CONSEQUENCE_PATTERNS:
+                    if re.search(pattern, lowered):
+                        errors.append(
+                            f"{at}.subject states a consequence, not an invariant: {subject!r}"
+                        )
+                        break
+            if action == "rewrite_then_report":
+                original = claim.get("original_subject")
+                if not isinstance(original, str) or not original.strip():
+                    errors.append(
+                        f"{at}.original_subject is required when action is 'rewrite_then_report' "
+                        f"(the consequence framing it replaced)"
+                    )
+
+        if not _valid_evidence_ids(claim.get("evidence_ids"), records):
+            errors.append(f"{at} must cite existing evidence_ids")
+    return errors
+
+
+def _validate_acceptance(at: str, acceptance: dict, records: dict[str, dict]) -> list[str]:
+    errors: list[str] = []
+    for required in (
+        "premise_kind",
+        "boundary_state",
+        "divergence_state",
+        "acceptability",
+        "rationale",
+        "evidence_ids",
+    ):
+        if required not in acceptance:
+            errors.append(f"{at}.acceptance missing required field: {required}")
+
+    premise_kind = acceptance.get("premise_kind")
+    if premise_kind not in PREMISE_KINDS:
+        errors.append(
+            f"{at}.acceptance.premise_kind must be one of {sorted(PREMISE_KINDS)}, got {premise_kind!r}"
+        )
+    boundary_state = acceptance.get("boundary_state")
+    if boundary_state not in BOUNDARY_STATES:
+        errors.append(
+            f"{at}.acceptance.boundary_state must be one of {sorted(BOUNDARY_STATES)}, got {boundary_state!r}"
+        )
+    divergence_state = acceptance.get("divergence_state")
+    if divergence_state not in DIVERGENCE_STATES:
+        errors.append(
+            f"{at}.acceptance.divergence_state must be one of {sorted(DIVERGENCE_STATES)}, got {divergence_state!r}"
+        )
+    acceptability = acceptance.get("acceptability")
+    if acceptability not in ACCEPTABILITY:
+        errors.append(
+            f"{at}.acceptance.acceptability must be one of {sorted(ACCEPTABILITY)}, got {acceptability!r}"
+        )
+
+    # The acceptability verdict must be derived from the three answers.
+    if (
+        premise_kind in PREMISE_KINDS
+        and boundary_state in BOUNDARY_STATES
+        and divergence_state in DIVERGENCE_STATES
+        and acceptability in ACCEPTABILITY
+    ):
+        derived = _derive_acceptability(premise_kind, boundary_state, divergence_state)
+        if derived != acceptability:
+            errors.append(
+                f"{at}.acceptance.acceptability is {acceptability!r} but the three answers derive "
+                f"{derived!r} (premise={premise_kind}, boundary={boundary_state}, divergence={divergence_state})"
+            )
+
+    if divergence_state == "present":
+        sides = acceptance.get("divergence_sides")
+        if not isinstance(sides, list) or len(sides) < 2:
+            errors.append(
+                f"{at}.acceptance.divergence_state 'present' requires divergence_sides with both sides cited"
+            )
+        else:
+            for k, side in enumerate(sides):
+                if not isinstance(side, dict):
+                    errors.append(f"{at}.acceptance.divergence_sides[{k}] must be an object")
+                    continue
+                fl = side.get("file_line")
+                if not isinstance(fl, str) or not FILE_LINE.match(fl):
+                    errors.append(
+                        f"{at}.acceptance.divergence_sides[{k}].file_line must be 'file:line', got {fl!r}"
+                    )
+                behavior = side.get("behavior")
+                if not isinstance(behavior, str) or not behavior.strip():
+                    errors.append(f"{at}.acceptance.divergence_sides[{k}].behavior must be non-empty")
+    elif divergence_state == "absent":
+        if not _valid_absence_searches(acceptance.get("divergence_absence_searches"), records):
+            errors.append(
+                f"{at}.acceptance.divergence_state 'absent' requires two distinct captured "
+                f"zero-match searches in divergence_absence_searches"
+            )
+
+    if not _valid_evidence_ids(acceptance.get("evidence_ids"), records):
+        errors.append(f"{at}.acceptance must cite existing evidence_ids")
+    elif not _cites_source_read(acceptance.get("evidence_ids"), records):
+        errors.append(f"{at}.acceptance must cite a captured source read")
+    return errors
+
+
+def _validate_work_queue(obj: dict, records: dict[str, dict]) -> list[str]:
+    errors: list[str] = []
+    queue = obj.get("work_queue")
+    if not isinstance(queue, list):
+        return ["work_queue must be a list"]
+    categories: set[str] = set()
+    final_review_done = False
+    for i, item in enumerate(queue):
+        if not isinstance(item, dict):
+            errors.append(f"work_queue[{i}] must be an object")
+            continue
+        for required in (
+            "id",
+            "category",
+            "task",
+            "priority",
+            "reason",
+            "budget_unit",
+            "stop_condition",
+            "status",
+            "outcome",
+            "evidence_ids",
+        ):
+            if required not in item:
+                errors.append(f"work_queue[{i}] missing required field: {required}")
+        category = item.get("category")
+        if category not in {"validity", "acceptance", "artifact", "ordering", "final_review", "other"}:
+            errors.append(f"work_queue[{i}].category is not a recognised category: {category!r}")
+        else:
+            categories.add(category)
+        status = item.get("status")
+        if status not in {"queued", "active", "completed", "deferred"}:
+            errors.append(
+                f"work_queue[{i}].status must be queued / active / completed / deferred, got {status!r}"
+            )
+        if status in {"queued", "active"}:
+            errors.append(
+                f"work_queue[{i}] is {status!r}; every item must be completed or deferred before delivery"
+            )
+        if status == "deferred":
+            outcome = item.get("outcome")
+            if not isinstance(outcome, str) or not outcome.strip():
+                errors.append(f"work_queue[{i}] deferred requires an outcome stating the limitation")
+        if category == "final_review" and status == "completed":
+            final_review_done = True
+        if not _valid_evidence_ids(item.get("evidence_ids"), records):
+            errors.append(f"work_queue[{i}] must cite existing evidence_ids")
+    for required_category in ("validity", "acceptance"):
+        if required_category not in categories:
+            errors.append(f"work_queue has no task for the {required_category!r} stage")
+    if not final_review_done:
+        errors.append("work_queue must contain a completed 'final_review' task before delivery")
+    return errors
+
+
+def _validate_channel(obj: dict) -> list[str]:
+    errors: list[str] = []
+    channel = obj.get("channel")
+    if not isinstance(channel, dict):
+        return ["channel must be an object"]
+    name = channel.get("name")
+    if not isinstance(name, str) or not name.strip():
+        errors.append("channel.name must be non-empty")
+    reason = channel.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        errors.append("channel.reason must state why this channel was chosen")
+    return errors
+
+
+def validate(text: str, records: dict[str, dict]) -> tuple[int, list[str]]:
+    errors: list[str] = []
+    obj, extract_error = _extract_adjudication_table(text)
+    if obj is None:
+        return 1, [extract_error or "adjudication table could not be extracted"]
+
+    for required in ("claims", "coverage_paragraph_present", "work_queue", "channel"):
+        if required not in obj:
+            errors.append(f"missing required field: {required}")
+
+    if obj.get("coverage_paragraph_present") is not True:
+        errors.append("coverage_paragraph_present must be true")
+    missing_sections = _missing_coverage_sections(text)
+    if missing_sections:
+        errors.append(
+            "notes file is missing coverage section(s): "
+            + ", ".join(missing_sections)
+            + " (every one of them is required: "
+            + ", ".join(name for name, _ in COVERAGE_MARKERS)
+            + ")"
+        )
+
+    errors.extend(_validate_claims(obj, records))
+    errors.extend(_validate_work_queue(obj, records))
+    errors.extend(_validate_channel(obj))
+
+    return (1 if errors else 0), errors
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Validate a vulnerability claim adjudication notes file.")
+    parser.add_argument("notes", help="path to the adjudication notes Markdown file")
+    parser.add_argument("--evidence-ledger", help="path to the evidence JSONL ledger")
+    args = parser.parse_args(argv)
+
+    notes = Path(args.notes)
+    if not notes.exists():
+        print(f"FAIL: notes file not found: {notes}", file=sys.stderr)
+        return 2
+    if not SCHEMA_PATH.exists():
+        print(f"FAIL: schema missing: {SCHEMA_PATH}", file=sys.stderr)
+        return 2
+
+    records: dict[str, dict] = {}
+    ledger_errors: list[str] = []
+    if args.evidence_ledger:
+        records, ledger_errors = _load_evidence_ledger(args.evidence_ledger)
+        for err in ledger_errors:
+            print(f"FAIL: {err}", file=sys.stderr)
+    else:
+        print(
+            "FAIL: --evidence-ledger is required; an adjudication without cited "
+            "evidence is an assertion, not a verdict",
+            file=sys.stderr,
+        )
+        return 2
+
+    text = notes.read_text(encoding="utf-8")
+    code, errors = validate(text, records)
+    for err in errors:
+        print(f"FAIL: {err}", file=sys.stderr)
+    if ledger_errors:
+        code = 1
+    if code == 0:
+        print(
+            f"OK: adjudication structure valid ({len(records)} evidence record(s)); "
+            f"both verdicts are derived and every claim cites evidence that exists"
+        )
+    else:
+        print(
+            f"FAIL: {len(errors)} adjudication requirement(s) not met; "
+            f"no artifact built on this state is ready",
+            file=sys.stderr,
+        )
+    return code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

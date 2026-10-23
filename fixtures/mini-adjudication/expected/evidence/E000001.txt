@@ -1,0 +1,40 @@
+86: final class AuthService
+87: {
+88:     public function __construct(
+89:         private Store $store,
+90:         private ExternalAuth $external,
+91:         private RateLimiter $limiter,
+92:     ) {
+93:     }
+94:
+95:     /**
+96:      * Shape A. The extension's empty answer is read as "please set this
+97:      * password" instead of "I have no opinion".
+98:      */
+99:     public function login(string $username, string $password): bool
+100:     {
+101:         $this->limiter->recordAttempt($username);
+102:         if (!$this->limiter->allow($username)) {
+103:             return false;
+104:         }
+105:
+106:         $answer = $this->external->authenticate($username, $password);
+107:
+108:         if ($answer === '') {
+109:             $user = $this->store->find($username);
+110:             if ($user === null) {
+111:                 return false;
+112:             }
+113:             // DEFECT: the presented password is written to the store and
+114:             // then verified against the hash that was just created from
+115:             // it, so any password succeeds.
+116:             $this->store->save($username, password_hash($password, PASSWORD_DEFAULT), $user['is_admin']);
+117:             return true;
+118:         }
+119:
+120:         $user = $this->store->find($username);
+121:         if ($user === null) {
+122:             return false;
+123:         }
+124:         return password_verify($password, $user['password_hash']);
+125:     }

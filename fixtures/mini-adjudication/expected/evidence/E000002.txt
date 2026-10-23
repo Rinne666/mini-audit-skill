@@ -1,0 +1,13 @@
+127:     /**
+128:      * The pre-login probe. An empty extension answer means "no opinion",
+129:      * so the probe must not treat the account as authenticated.
+130:      */
+131:     public function probe(string $username, string $password): bool
+132:     {
+133:         $answer = $this->external->authenticate($username, $password);
+134:         if ($answer === '') {
+135:             return false;
+136:         }
+137:         return true;
+138:     }
+139: }

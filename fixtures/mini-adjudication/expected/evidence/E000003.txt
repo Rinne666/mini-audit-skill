@@ -1,0 +1,17 @@
+149:     /**
+150:      * The admin plane. Refuses the same empty extension answer that
+151:      * AuthService::login accepts. This is one side of the divergence.
+152:      */
+153:     public function login(string $username, string $password): bool
+154:     {
+155:         $answer = $this->external->authenticate($username, $password);
+156:         if ($answer === '') {
+157:             return false;
+158:         }
+159:         $user = $this->store->find($username);
+160:         if ($user === null) {
+161:             return false;
+162:         }
+163:         return password_verify($password, $user['password_hash']);
+164:     }
+165: }

@@ -1,24 +1,19 @@
 {
   "_comment": "Skill file fingerprint manifest. Used by runtime/check_skill_loaded.py to verify that the version of SKILL.md / references / templates currently in the agent context matches HEAD of the skill repo. Updated by `python runtime/check_skill_loaded.py --refresh`. See SKILL.md session-start rule.",
   "files": {
-    "README.md": "22e385ba0cf2eb3da1d5b140d5d1a6d539ec3d20406633509ea3904a9ad02914",
-    "SKILL.md": "9c0719578245ae1537c3d8031299cd986eac175ed7082bae0ef5a617dce959dd",
-    "references/discovery.md": "a43f5187419cf80508e2cf8d9f1a6a30beb885654a74a0ba27caf880977b463d",
-    "references/permission-delta.md": "46b241cc4ce81e28de282851d0a8ddaa378d44c44b31fe270b87f14b9ec41cc1",
-    "references/search-strategy.md": "99d10dc8cdd02f13a9ee69f4b29c9389b98e214024fff4a150ab4a9daf35c15a",
-    "references/verification.md": "7885febcc29f8fec03b1291f44160badd1ae076b33d932b6cfd1b144837e3fa1",
-    "references/vuln-classes/authz.md": "1c7800729dd5da54c4fd213bf54f9ba171b687adc39761559a3a83c1fdfe77da",
-    "references/vuln-classes/cross_service_trust.md": "62cf1b4c86830689b76d6878c8cc55786fec34bd01e8272fbb98de7bcc919d10",
-    "references/vuln-classes/crypto.md": "a4efa0d2772a11acd5a6a239a79be0335448244927515ad5855994177a9517c1",
-    "references/vuln-classes/deserialization.md": "a647fd54081731044425b95e9d6f0d9842f0c50c04b65d322cf7519e25264692",
-    "references/vuln-classes/injection.md": "118443301992d29248327909c4a76145b874c652a89c1eec2d74347be53466f4",
-    "references/vuln-classes/path_traversal.md": "0adf9dae67fdab1810dd25f5cbd4a41e4642ca2bb0789520e6c4b64ab9d2534b",
-    "references/vuln-classes/race_condition.md": "12380ac0d971eda406e94aae64d1fcf82c4160683e0cab092133f859faff19c5",
-    "references/vuln-classes/ssrf.md": "69a1ab9a572c87450e31edc64114f3c90b99db337629f3c48eceb3a66b16c507",
-    "schemas/pairing-table.schema.json": "592ef8cdf0349b7f299087eed9271984a02664a6d379ddcb27325ddf4b096c1f",
-    "templates/audit-notes.md": "d80f890b73643cb2611244b1152cc4d410e87c487b68dd5215aed54f95ea7d43",
-    "templates/finding.md": "f668cb9f2b789a8b453c64c79586c1ba7a4af70747e089fbd8164ac54c71b1f7"
+    "README.md": "47ac38be8c7cdc4392dfe2766f6e3ad94980dec004a71e7c2b670acf3bbc6ba8",
+    "SKILL.md": "472a3ee417b8d709f6c27467c28c1acba7a2b8e8e88eb719a17214cf7f31cfa4",
+    "references/acceptance-policy.md": "d00c5cefc6e6226d51977a1aebbb798ed7bf89bdb1072a2d840cca68ffcc3e8f",
+    "references/claim-decomposition.md": "3a111ca07948cb4daac112337b44ddf5918b61248d7718aa3ee0619181930f88",
+    "references/ordering-and-channels.md": "f638022af32a9d85234ff2e25130c97d534e03f44890472372e4febc69cda68f",
+    "references/premise-analysis.md": "8642a036b6a507dea76d096e057398fbdf6b4eab576bc216252422b2b2283155",
+    "references/report-writing.md": "c56df12bf37c4cfc1126768e60f40bdf9cd046f584ddcae0d24769341aa4a08c",
+    "references/validity-assessment.md": "4381eb4e86e2d9b17d7dcb3d7ade52903ab0fa29a0077b29c87e8243ebe968a5",
+    "schemas/adjudication.schema.json": "7353da8c163f6185688955586669ab9224afbc8984a7018b2a31129be1e13ab5",
+    "templates/adjudication-notes.md": "4aab0f08479ba351f103b9ef5db889db0a1562047245e1db4fe14dc04e9bc867",
+    "templates/advisory.md": "eb31662d2dd4a918dd1063d8edfd64ccd766f0b406b3a2f5a08c75cd2c959896",
+    "templates/refutation.md": "9775ea94d28da15ccaa9b3ac231881f6b8b23f6a3478ce2ca02c5cbc47fcc647"
   },
-  "generated_at_unix": 1790483875,
+  "generated_at_unix": 1792728481,
   "schema_version": 1
 }

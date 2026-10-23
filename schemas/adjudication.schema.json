@@ -1,0 +1,192 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Rinne666/mini-audit-skill/schemas/adjudication.schema.json",
+  "title": "Vulnerability Claim Adjudication Ledgers",
+  "description": "Structural requirements for claim decomposition, per-assertion refutation evidence, the mechanical derivation of both verdicts, work-queue closure, and delivery discipline. Passing this schema does not prove a verdict is correct or that a maintainer will accept a report.",
+  "type": "object",
+  "required": ["claims", "coverage_paragraph_present", "work_queue", "channel"],
+  "properties": {
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per claim under adjudication, with its decomposition, per-assertion verdicts, the derived validity and acceptability verdicts, and the action.",
+      "items": {
+        "type": "object",
+        "required": ["id", "claim", "source_ref", "assertions", "validity", "action", "evidence_ids"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "claim": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The claim as received, in the words it was made."
+          },
+          "claim_source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Where the claim came from: scanner, colleague, advisory, bounty report, our own reading."
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The source revision this verdict is relative to."
+          },
+          "assertions": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The claim split into parts that can each be true or false. A claim with no assertions is unadjudicated.",
+            "items": {
+              "type": "object",
+              "required": ["id", "type", "statement", "anchor", "verdict", "refutation_attempted", "evidence_ids"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "type": {
+                  "enum": ["defect", "reachability", "consequence", "precondition"],
+                  "description": "Which part of the claim this assertion is: the defect itself, that the attacker can reach it, the consequence that follows, or the precondition that must hold."
+                },
+                "statement": {"type": "string", "minLength": 1},
+                "anchor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The file:line or concrete named fact this assertion is checked against."
+                },
+                "verdict": {
+                  "enum": ["confirmed", "refuted", "unresolved", "fixed"],
+                  "description": "confirmed = verified in source. refuted = the opposite was shown. unresolved = a decisive fact is not obtainable from source. fixed = the defect is absent from the current source."
+                },
+                "refutation_attempted": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The specific attempt made to kill this assertion and its result. An assertion with no attempt is unresolved, not confirmed."
+                },
+                "absence_searches": {
+                  "type": "array",
+                  "description": "Two distinct captured zero-match searches, required when a refutation attempt consisted of searching for a guard that does not exist, and required for an unresolved assertion that rests on search evidence alone. Re-running the same search is not a second check.",
+                  "items": {
+                    "type": "object",
+                    "required": ["evidence_id"],
+                    "properties": {
+                      "evidence_id": {"type": "string", "pattern": "^E[0-9]{6}$"}
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^E[0-9]{6}$"}}
+              },
+              "additionalProperties": false
+            }
+          },
+          "validity": {
+            "enum": ["holds", "does_not_hold", "needs_more_evidence", "already_fixed"],
+            "description": "Derived from the assertion verdicts, never asserted: any refuted -> does_not_hold; any fixed -> already_fixed; an unresolved defect, reachability or consequence -> needs_more_evidence; otherwise -> holds. An unresolved precondition does not block the validity: it says how easily the trigger fires, not whether the defect is there."
+          },
+          "validity_rationale": {"type": "string", "minLength": 1},
+          "acceptance": {
+            "type": "object",
+            "description": "Required when validity is holds. Never present for a claim that does not hold: such a claim is not a vulnerability, and is not 'unacceptable'.",
+            "required": ["premise_kind", "boundary_state", "divergence_state", "acceptability", "rationale", "evidence_ids"],
+            "properties": {
+              "premise_kind": {
+                "enum": ["attacker_only", "requires_operator_decision", "requires_ambient_state", "requires_third_party_misconfiguration"]
+              },
+              "premise_evidence": {"type": "string"},
+              "boundary_state": {
+                "enum": ["declared_and_violated", "not_declared", "declared_and_consistent"]
+              },
+              "boundary_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
+              "divergence_state": {"enum": ["present", "absent"]},
+              "divergence_sides": {
+                "type": "array",
+                "minItems": 2,
+                "description": "Both sides of a same-version behavioural divergence, each with file:line. Required when divergence_state is present.",
+                "items": {
+                  "type": "object",
+                  "required": ["file_line", "behavior"],
+                  "properties": {
+                    "file_line": {"type": "string", "pattern": "^.+:[0-9]+(-[0-9]+)?$"},
+                    "behavior": {"type": "string", "minLength": 1}
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "divergence_absence_searches": {
+                "type": "array",
+                "description": "Two distinct captured zero-match searches, required when divergence_state is absent.",
+                "items": {
+                  "type": "object",
+                  "required": ["evidence_id"],
+                  "properties": {
+                    "evidence_id": {"type": "string", "pattern": "^E[0-9]{6}$"}
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "acceptability": {
+                "enum": ["accept", "accept_after_rewrite", "decline"]
+              },
+              "rationale": {"type": "string", "minLength": 1},
+              "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^E[0-9]{6}$"}}
+            },
+            "additionalProperties": false
+          },
+          "subject": {
+            "type": "string",
+            "description": "The invariant the code fails to enforce. A consequence is not a subject."
+          },
+          "original_subject": {
+            "type": "string",
+            "description": "The consequence-framed subject this replaced, when a rewrite happened."
+          },
+          "action": {
+            "enum": ["report", "rewrite_then_report", "hardening_note", "no_report", "needs_evidence", "already_fixed"],
+            "description": "report = write the advisory. rewrite_then_report = write it with the rewritten subject. hardening_note = offer it as a patch, not a report. no_report = the claim was refuted. needs_evidence = a decisive fact is missing. already_fixed = the defect is gone."
+          },
+          "artifact": {
+            "type": "string",
+            "description": "Path to the artifact the verdict calls for."
+          },
+          "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^E[0-9]{6}$"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "work_queue": {
+      "type": "array",
+      "minItems": 4,
+      "description": "One bounded work item per claim plus a final review. At delivery, every item must be completed or explicitly deferred; active or queued work blocks delivery.",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "task", "priority", "reason", "budget_unit", "stop_condition", "status", "outcome", "evidence_ids"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^W[0-9]+$"},
+          "category": {"enum": ["validity", "acceptance", "artifact", "ordering", "final_review", "other"]},
+          "task": {"type": "string", "minLength": 1},
+          "priority": {"enum": ["high", "medium", "low"]},
+          "reason": {"type": "string", "minLength": 1},
+          "budget_unit": {"type": "string", "minLength": 1},
+          "stop_condition": {"type": "string", "minLength": 1},
+          "status": {"enum": ["queued", "active", "completed", "deferred"]},
+          "outcome": {"type": "string", "minLength": 1},
+          "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^E[0-9]{6}$"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "channel": {
+      "type": "object",
+      "required": ["name", "reason"],
+      "description": "Exactly one reporting channel. Two channels mean duplicate intake and read as spam.",
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1},
+        "alternative_considered": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "coverage_paragraph_present": {
+      "type": "boolean",
+      "enum": [true],
+      "description": "The notes file contains the coverage sections a reviewer scans to judge whether the adjudication was thorough."
+    }
+  },
+  "additionalProperties": false
+}
