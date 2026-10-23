@@ -1,16 +1,19 @@
 {
   "_comment": "Skill file fingerprint manifest. Used by runtime/check_skill_loaded.py to verify that the version of SKILL.md / references / templates currently in the agent context matches HEAD of the skill repo. Updated by `python runtime/check_skill_loaded.py --refresh`. See SKILL.md session-start rule.",
   "files": {
-    "README.md": "aff67bad141c44bb99024404c19315b8b64fc8fe56fe4d2d6c156ec71829a4f6",
-    "SKILL.md": "92bc352beebd1f7acdce0af48a32ad763f9e70c69fa5fe7805b25b4704ec3d50",
-    "references/acceptance-policy.md": "9a93d88ab51012e13a4be6229fe94e507ef25c8cf66694721ed0aac8e41f63ef",
-    "references/ordering-and-channels.md": "e3dc9a0cdb45ad856352857b2c4c9e2ab88fcaf71f6a7421071bfdb5cc351f1f",
-    "references/premise-analysis.md": "bc32061bbeb5146ca8246956d0db73790d390d26bf1fb2eef27345d1c54519b2",
-    "references/report-writing.md": "3b9f2c63e7e40e09db4aee0e976fa6cf84312be85aa43dc081a6d88364cdc677",
-    "schemas/triage-table.schema.json": "cd6e1776116adacfa1bac101d2b158abb747f36aa6af787c70a96a99d126083a",
-    "templates/advisory.md": "7830c6d679d5147a8fab709592cc8b4c539dcb7d68aae77026ad0b67ae3cef23",
-    "templates/triage-notes.md": "37c3068bacd4437d3aafd8d0bc70ea99a3a167095df18de4660dc1b1610d2dcc"
+    "README.md": "47ac38be8c7cdc4392dfe2766f6e3ad94980dec004a71e7c2b670acf3bbc6ba8",
+    "SKILL.md": "472a3ee417b8d709f6c27467c28c1acba7a2b8e8e88eb719a17214cf7f31cfa4",
+    "references/acceptance-policy.md": "d00c5cefc6e6226d51977a1aebbb798ed7bf89bdb1072a2d840cca68ffcc3e8f",
+    "references/claim-decomposition.md": "3a111ca07948cb4daac112337b44ddf5918b61248d7718aa3ee0619181930f88",
+    "references/ordering-and-channels.md": "f638022af32a9d85234ff2e25130c97d534e03f44890472372e4febc69cda68f",
+    "references/premise-analysis.md": "8642a036b6a507dea76d096e057398fbdf6b4eab576bc216252422b2b2283155",
+    "references/report-writing.md": "c56df12bf37c4cfc1126768e60f40bdf9cd046f584ddcae0d24769341aa4a08c",
+    "references/validity-assessment.md": "4381eb4e86e2d9b17d7dcb3d7ade52903ab0fa29a0077b29c87e8243ebe968a5",
+    "schemas/adjudication.schema.json": "7353da8c163f6185688955586669ab9224afbc8984a7018b2a31129be1e13ab5",
+    "templates/adjudication-notes.md": "4aab0f08479ba351f103b9ef5db889db0a1562047245e1db4fe14dc04e9bc867",
+    "templates/advisory.md": "eb31662d2dd4a918dd1063d8edfd64ccd766f0b406b3a2f5a08c75cd2c959896",
+    "templates/refutation.md": "9775ea94d28da15ccaa9b3ac231881f6b8b23f6a3478ce2ca02c5cbc47fcc647"
   },
-  "generated_at_unix": 1792725423,
+  "generated_at_unix": 1792728481,
   "schema_version": 1
 }

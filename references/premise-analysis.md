@@ -1,8 +1,12 @@
-# Premise Analysis — Question 1
+# Premise Analysis — Acceptance Question 1
 
 > Load this every time the premise classification is not obvious, and
-> whenever Question 1 is being answered for a finding whose outcome
-> matters.
+> whenever Q1 is being answered for a claim whose validity is `holds`.
+>
+> This is the **acceptance** stage's first question, not the validity
+> stage. A claim that does not hold never reaches it. The premise
+> answers "who creates the gating condition" — a question about the
+> maintainer's review, not about whether the code is wrong.
 
 The upstream rejection is almost always some form of *"the window
 requires an operator to have done X"*. So the useful cut is not "is it
@@ -117,14 +121,16 @@ needs a citation like any other claim:
   required before the attacker's request can proceed.
 
 When the gate cannot be located in the source, the premise is
-**`NEEDS-RUNTIME`**, not a guess. A `send` disposition needs a
-classified premise, so an unresolved premise blocks sending.
+**`NEEDS-RUNTIME`**, not a guess. An acceptability verdict needs a
+classified premise, so an unresolved premise blocks the report — it
+does not make the claim untrue, and it is not the validity verdict's
+business.
 
 ---
 
 ## 4. What to do when the premise is operator-dependent
 
-A finding with an operator-dependent premise is not automatically
+A claim with an operator-dependent premise is not automatically
 unreportable. It is automatically **not reportable in that framing**.
 Three ways forward:
 
@@ -136,10 +142,19 @@ Three ways forward:
    holds regardless of deployment — "the provider layer permits a second
    administrator to be created" — is a different subject with a
    different premise.
-3. **Convert it to hardening.** If neither exists, the finding is
-   still real and worth offering, but as a patch or a hardening note,
-   not as a vulnerability report. Spending the report on it costs
-   credibility that the next report needs.
+3. **Convert it to hardening.** If neither exists, the defect is still
+   real and worth offering, but as a patch or a hardening note, not as a
+   vulnerability report. Spending the report on it costs credibility
+   that the next report needs.
+
+Note the mapping to the acceptability verdict: a clean premise with a
+divergence is `accept`; a clean premise without one is
+`accept_after_rewrite`; a third-party premise with a divergence is
+`accept_after_rewrite`; everything else is `decline`. The
+`requires_third_party_misconfiguration` kind lands in
+`accept_after_rewrite` rather than `decline` because configuring a
+documented extension correctly is not an operator weakening — the
+product's own handling of the extension's output is what is broken.
 
 ---
 

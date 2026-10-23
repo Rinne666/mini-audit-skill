@@ -4,10 +4,13 @@
 > prior classifications, and when deciding what the project's trust model
 > and boundaries are.
 
-The disposition of every finding is judged against **the maintainer's
-acceptance policy**, not against the quality of the evidence. A perfect
-proof of a defect the maintainer considers out of scope is a closed
-report.
+This applies **only to a claim whose validity is `holds`**. A claim that
+does not hold is not "unacceptable" — it is not a vulnerability, and it
+never reaches this stage.
+
+The acceptability verdict is judged against **the maintainer's acceptance
+policy**, not against the quality of the evidence. A perfect proof of a
+defect the maintainer considers out of scope is a closed report.
 
 ---
 
@@ -19,7 +22,7 @@ In order of authority:
 2. **Published advisories** — the empirical record of what was accepted.
 3. **Release notes** — the classification of each fix.
 4. **Documentation** — the stated trust model.
-5. **A previous closure of yours** — the model in the maintainer's own
+5. **A previous refusal of yours** — the model in the maintainer's own
    words, which outranks all of the above.
 
 If none exists, the trust ladder is **derived**. Mark it derived in the
@@ -90,7 +93,7 @@ So before writing a report, search the advisory history for the
 **shape** you are about to report: same component, same kind of
 precondition, same consequence family. Find how it was classified
 there. If it was hardening, you are writing a report whose answer
-already exists — change the subject, or do not send it.
+already exists — change the subject, or do not report it.
 
 ### What to extract from each advisory
 

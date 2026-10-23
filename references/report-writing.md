@@ -1,6 +1,12 @@
 # Report Writing
 
-> Load this when writing the advisory body, and before every submit.
+> Load this when writing the advisory body for a claim whose validity is
+> `holds`, and before every submit.
+>
+> This document is **not** the tool for a claim that does not hold. For
+> those, use `templates/refutation.md` — the artifact is a written
+> finding, not a report, and sending a refuted claim as a report is
+> worse than sending nothing.
 
 Everything here came from a real submission and its real outcome. The
 goal is to remove the ways a correct report gets lost in a queue.
@@ -50,7 +56,7 @@ retrieved" and move on. Taking the data is both wrong and unnecessary.
 
 **Never** argue with a prior closure inside a new report. New reports do
 not cite prior reports as leverage. If a closure materially changes the
-analysis, that belongs in the triage notes, not in the report.
+analysis, that belongs in the adjudication notes, not in the report.
 
 **Do** state the assumed trust model when the project publishes no
 policy, so the maintainer can correct it rather than dismiss the whole
@@ -174,8 +180,9 @@ When a maintainer responds — accepted, closed, or asked a question:
 Run this list literally before any submit action. Every item is a way a
 report has been lost.
 
-- [ ] The disposition is `send` or `rewrite_then_send`, and the triage
-      record validates.
+- [ ] The validity verdict is `holds` and the acceptability verdict is
+      `accept` or `accept_after_rewrite`, and the adjudication record
+      validates.
 - [ ] The premise is `attacker_only`, or the report explicitly
       discloses the operator-dependent part and survives without it.
 - [ ] No operator-dependent premise is hidden in the reproduction steps.

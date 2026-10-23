@@ -1,11 +1,11 @@
 # Advisory — {slug}
 
-> One report per file, and one file per report. Keep it under one
-> screen; a report that needs more room is usually arguing rather than
-> showing.
+> The report draft, for a claim whose validity is `holds` and whose
+> acceptability is `accept` or `accept_after_rewrite`.
 >
-> This template is the **disclosure** form of a finding. It is not the
-> audit's internal finding record, and it is not a hardening note.
+> For a claim that does **not** hold, do not use this template. Use
+> `templates/refutation.md` instead — a report for a claim that was
+> refuted is worse than no report.
 
 ## Title
 
@@ -16,8 +16,8 @@ consequence the attacker obtains.
 > Strong: "The provider layer permits a second administrator to be
 > created; there is no first-admin-only constraint"
 
-A consequence subject turns the report into a deployment argument.
-An invariant subject keeps the code as the object of the claim, and
+A consequence subject turns the report into a deployment argument. An
+invariant subject keeps the code as the object of the claim, and
 survives even when the maintainer disagrees about reachability.
 
 ## Affected component
@@ -31,7 +31,7 @@ survives even when the maintainer disagrees about reachability.
 
 One sentence, naming the trust rung and the credentials held:
 
-> An unauthenticated network peer who knows only an existing username.
+> An unauthenticated network client who knows only an existing username.
 > An authenticated protocol user of the affected account.
 > A holder of an API key bound to a restricted administrator.
 
@@ -114,10 +114,10 @@ reasoning, not just the number.
 ## Version and scope
 
 - **Version tested**: `{commit / tag}`.
-- **Affected range**: `{range}` — or, when the introducing commit cannot
-  be traced, "every build that contains this function". Never invent a
-  version boundary; an unverified range invites the maintainer to find
-  a boundary you did not intend.
+- **Affected range**: `{range}` — or, when the introducing commit
+  cannot be traced, "every build that contains this function". Never
+  invent a version boundary; an unverified range invites the
+  maintainer to find a boundary you did not intend.
 - **Patched version**: `{released version}` — or, when the fix is
   unreleased, "unreleased on `main`, commit `<sha>`". Never guess the
   next version number.
