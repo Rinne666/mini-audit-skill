@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from validate_adjudication import (  # noqa: E402
     _derive_acceptability,
     _derive_validity,
+    _special_config_consistent,
 )
 
 failures: list[str] = []
@@ -146,6 +147,34 @@ check(
     "third party without divergence declines",
     _derive_acceptability("requires_third_party_misconfiguration", "not_declared", "absent"),
     "decline",
+)
+
+# --- trigger-configuration / premise consistency --------------------------
+
+check(
+    "special config with attacker_only premise is inconsistent",
+    _special_config_consistent(True, "attacker_only"),
+    False,
+)
+check(
+    "no special config with attacker_only premise is consistent",
+    _special_config_consistent(False, "attacker_only"),
+    True,
+)
+check(
+    "special config with operator premise is consistent",
+    _special_config_consistent(True, "requires_operator_decision"),
+    True,
+)
+check(
+    "special config with ambient premise is consistent",
+    _special_config_consistent(True, "requires_ambient_state"),
+    True,
+)
+check(
+    "missing answers are not flagged (structure checks report them)",
+    _special_config_consistent(None, None),
+    True,
 )
 
 if failures:

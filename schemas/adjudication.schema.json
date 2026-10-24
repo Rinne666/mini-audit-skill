@@ -4,8 +4,34 @@
   "title": "Vulnerability Claim Adjudication Ledgers",
   "description": "Structural requirements for claim decomposition, per-assertion refutation evidence, the mechanical derivation of both verdicts, work-queue closure, and delivery discipline. Passing this schema does not prove a verdict is correct or that a maintainer will accept a report.",
   "type": "object",
-  "required": ["claims", "coverage_paragraph_present", "work_queue", "channel"],
+  "required": ["claims", "coverage_paragraph_present", "work_queue", "channel", "target"],
   "properties": {
+    "target": {
+      "type": "object",
+      "description": "The target profile every verdict in this file is relative to: what kind of thing it is, its name, where its acceptance policy lives, and the channel it demonstrably uses.",
+      "required": ["kind", "name", "security_policy", "preferred_channel"],
+      "properties": {
+        "kind": {
+          "enum": ["open_source", "closed_product", "web_service"],
+          "description": "An open_source target carries the oss_verification block on every holding claim; the others state not-applicable in the notes section instead."
+        },
+        "name": {"type": "string", "minLength": 1},
+        "security_policy": {
+          "type": "object",
+          "required": ["source", "ref"],
+          "properties": {
+            "source": {
+              "enum": ["stated", "derived", "none"],
+              "description": "stated = the project published a policy; derived = the model was inferred from docs/history and the report must say so; none = nothing was found."
+            },
+            "ref": {"type": "string", "minLength": 1, "description": "The policy location, or a none-found statement naming what was searched."}
+          },
+          "additionalProperties": false
+        },
+        "preferred_channel": {"type": "string", "minLength": 1, "description": "The channel the target's own advisory history shows it actually uses."}
+      },
+      "additionalProperties": false
+    },
     "claims": {
       "type": "array",
       "minItems": 1,
@@ -120,6 +146,53 @@
                   "additionalProperties": false
                 }
               },
+              "oss_verification": {
+                "type": "object",
+                "description": "Required on every holding claim when the target kind is open_source: the audit result checked one-by-one against the project's own record.",
+                "required": ["policy_verified", "commit_timeline", "historical_similar", "maintainer_preference", "evidence_ids"],
+                "properties": {
+                  "policy_verified": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "What the project's security policy / advisory history says about this claim's shape, with its reference."
+                  },
+                  "commit_timeline": {
+                    "type": "object",
+                    "required": ["introducing_commit", "released_in", "fix_state", "published_as"],
+                    "properties": {
+                      "introducing_commit": {"type": "string", "minLength": 1, "description": "sha + date, or 'untraced — reason'. Never a guess."},
+                      "released_in": {"type": "string", "minLength": 1, "description": "First tag/release containing the defect, or untraced."},
+                      "fix_state": {"type": "string", "minLength": 1, "description": "none on main / fixing sha / partial."},
+                      "published_as": {"type": "string", "minLength": 1, "description": "Existing advisory/CVE covering this defect, or 'none found — searched …'."}
+                    },
+                    "additionalProperties": false
+                  },
+                  "historical_similar": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Near-identical prior issues and how they were classified; the none-found entry (with what was searched) is a valid single item.",
+                    "items": {
+                      "type": "object",
+                      "required": ["ref", "classification"],
+                      "properties": {
+                        "ref": {"type": "string", "minLength": 1, "description": "GHSA/CVE id, commit sha, issue number, or the none-found statement."},
+                        "classification": {
+                          "enum": ["security_fix", "hardening", "bug_fix", "wontfix", "unknown"],
+                          "description": "How the project itself classified the similar issue."
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "maintainer_preference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The project's demonstrated acceptance pattern (labelling, credit, cadence), with citations."
+                  },
+                  "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^E[0-9]{6}$"}}
+                },
+                "additionalProperties": false
+              },
               "acceptability": {
                 "enum": ["accept", "accept_after_rewrite", "decline"]
               },
@@ -135,6 +208,77 @@
           "original_subject": {
             "type": "string",
             "description": "The consequence-framed subject this replaced, when a rewrite happened."
+          },
+          "submission": {
+            "type": "object",
+            "description": "Required when action is report or rewrite_then_report: the submission summary dimensions and the target list (references/submission-summary.md).",
+            "required": ["core_business", "developer_awareness", "trigger_configuration", "boundary_crossed", "targets"],
+            "properties": {
+              "core_business": {
+                "type": "object",
+                "required": ["in_core", "evidence"],
+                "properties": {
+                  "in_core": {"type": "boolean", "description": "Is the defect in the product's advertised main line, or in a peripheral path?"},
+                  "evidence": {"type": "string", "minLength": 1, "description": "What decides it: scope statement, module placement, default build."}
+                },
+                "additionalProperties": false
+              },
+              "developer_awareness": {
+                "type": "object",
+                "required": ["aware", "evidence"],
+                "properties": {
+                  "aware": {
+                    "enum": ["aware", "false", "unknown"],
+                    "description": "aware = a comment/TODO/issue shows the developers noticed this risk; false = searched, nothing; unknown = history unavailable."
+                  },
+                  "evidence": {"type": "string", "minLength": 1}
+                },
+                "additionalProperties": false
+              },
+              "trigger_configuration": {
+                "type": "object",
+                "required": ["special_config_required", "default_configuration", "evidence"],
+                "properties": {
+                  "special_config_required": {
+                    "type": "boolean",
+                    "description": "Can the attacker reach the defect on the vendor's default, documented configuration? Must agree with the derived premise: true is rejected when the premise is attacker_only."
+                  },
+                  "default_configuration": {"type": "string", "minLength": 1, "description": "What the default actually is, cited."},
+                  "evidence": {"type": "string", "minLength": 1}
+                },
+                "additionalProperties": false
+              },
+              "boundary_crossed": {
+                "type": "object",
+                "required": ["from", "to"],
+                "properties": {
+                  "from": {"type": "string", "minLength": 1, "description": "The trust rung the attacker starts on."},
+                  "to": {"type": "string", "minLength": 1, "description": "The capability that becomes reachable."}
+                },
+                "additionalProperties": false
+              },
+              "targets": {
+                "type": "array",
+                "minItems": 1,
+                "description": "Where this claim can go. Exactly one entry is fit=primary; two primaries mean duplicate intake.",
+                "items": {
+                  "type": "object",
+                  "required": ["target", "fit", "reason"],
+                  "properties": {
+                    "target": {
+                      "enum": ["vendor_advisory", "cve_cna", "cnvd", "src_platform", "bounty_platform", "hardening_channel"]
+                    },
+                    "fit": {
+                      "enum": ["primary", "secondary", "unsuitable"],
+                      "description": "primary = the one channel that receives the submission; secondary = viable, not first; unsuitable = rejected, reason recorded."
+                    },
+                    "reason": {"type": "string", "minLength": 1}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
           },
           "action": {
             "enum": ["report", "rewrite_then_report", "hardening_note", "no_report", "needs_evidence", "already_fixed"],

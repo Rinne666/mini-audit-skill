@@ -1,0 +1,6 @@
+# Evidence artifacts and ledgers record byte-exact hashes. EOL
+# conversion on checkout breaks every recorded sha256, so these paths
+# must never be re-smudged, on any platform.
+fixtures/**/expected/evidence/** -text
+fixtures/**/expected/evidence.jsonl -text
+fixtures/**/expected/*.md -text

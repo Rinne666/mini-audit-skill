@@ -23,6 +23,9 @@ unblocks}.
 ## Target and Source Ref
 
 - **Target**: {repository / product}
+- **Target kind**: `open_source / closed_product / web_service` — an
+  open-source target carries the OSS Verification section below;
+  the others state "not applicable" there and say why.
 - **Source ref adjudicated**: `{commit / tag}`. Every verdict is relative
   to this ref; a claim verified against a different revision is a
   different claim.
@@ -65,6 +68,22 @@ cited evidence. A claim that does not hold never reaches this section.
 |---|---|---|---|---|---|
 | 1 | | | | `accept / accept_after_rewrite / decline` | |
 
+## OSS Verification
+
+Required when the target kind is `open_source`; for every claim that
+holds. This is where the audit result is checked one-by-one against
+the project's own record — its security policy, its commit timeline,
+its advisory history, and its demonstrated preference. A target that
+is not open source states "not applicable" here with the reason.
+
+| Claim | Policy check | Introducing commit | First release | Fix state | Published as | Similar issues | Maintainer preference |
+|---|---|---|---|---|---|---|---|
+| 1 | what the policy says about this shape, with ref | sha + date, or `untraced — reason` | tag, or untraced | none / sha / partial | advisory id, or "none found — searched …" | ref → classification | pattern, cited |
+
+Every cell is a cited fact or an explicit `untraced / none found`
+with what was searched. A guessed cell fails the validator and, in a
+report, fails the maintainer.
+
 ## Verdict Table
 
 The machine-readable decision. Row order is the delivery order.
@@ -77,6 +96,20 @@ The machine-readable decision. Row order is the delivery order.
 / `hardening_note` (offer as a patch) / `no_report` (state the
 refutation) / `needs_evidence` (name the missing fact) / `already_fixed`
 (note the fix).
+
+## Submission Summary
+
+The 可申报总结, distilled from `references/submission-summary.md`. One
+row per reportable claim; the full artifact is
+`templates/submission-summary.md`.
+
+| Claim | Core business | Developer aware | Special config | Boundary crossed | Primary target | Secondary / unsuitable |
+|---|---|---|---|---|---|---|
+| 1 | yes/no — evidence | aware/false/unknown — evidence | required? — default cited | from → to | one target — reason | others — reasons |
+
+Exactly one primary target per claim. Two primaries mean duplicate
+intake. A `special_config_required: true` claim cannot carry an
+`attacker_only` premise — the validator rejects the combination.
 
 ## Work Queue
 
@@ -129,11 +162,14 @@ Two channels mean duplicate intake.
    current source, split it into assertions, and test each one. Try to
    kill it. Record the validity verdict with cited evidence.
 2. **Assess round.** For claims that hold: read the project's
-   acceptance policy, then answer the three acceptance questions and
-   record the acceptability verdict.
+   acceptance policy, answer the three acceptance questions, and —
+   when the target is open source — complete the OSS Verification
+   row: policy check, commit timeline, similar issues, maintainer
+   preference.
 3. **Deliver round.** Produce the artifact the verdict calls for, and
    only that artifact. A claim that does not hold gets a written
-   finding, not a report.
+   finding, not a report. Every reportable claim gets its submission
+   row and the summary closes with the submittable list.
 
 The model can jump between rounds. The file does not enforce a state
 machine. The reviewer enforces it by reading.

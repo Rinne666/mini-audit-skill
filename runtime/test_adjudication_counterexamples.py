@@ -19,7 +19,13 @@ practice:
   * a subject written as a consequence,
   * two copies of the same search counted as two checks,
   * work left open at delivery,
-  * a divergence claimed absent without reproducible absence behind it.
+  * a divergence claimed absent without reproducible absence behind it,
+  * a reportable claim with no submission block (no core / awareness /
+    config / boundary / target answers),
+  * a submission that says special configuration is required while the
+    premise says the attacker creates the condition alone,
+  * a submission with no primary target — nothing would be submitted,
+  * an open-source holding claim with no oss_verification block.
 
 Run: python runtime/test_adjudication_counterexamples.py
 Exit codes: 0 all pass, 1 a test failed.
@@ -243,6 +249,44 @@ with tempfile.TemporaryDirectory() as raw_tmp:
     expect_rejected(
         "notes without every coverage section are rejected",
         stripped, ledger_path, "missing coverage section",
+    )
+
+    # 11. A reportable claim with no submission block.
+    ledger_path = stage(tmp)
+    obj = extract(base_text)
+    claim(obj, "C1").pop("submission", None)
+    expect_rejected(
+        "a reportable claim must carry its submission block",
+        rebuild(base_text, obj), ledger_path, "submission",
+    )
+
+    # 12. A trigger-configuration answer that contradicts the premise.
+    ledger_path = stage(tmp)
+    obj = extract(base_text)
+    claim(obj, "C1")["submission"]["trigger_configuration"]["special_config_required"] = True
+    expect_rejected(
+        "special config required + attacker_only premise is rejected",
+        rebuild(base_text, obj), ledger_path, "same fact",
+    )
+
+    # 13. A submission with no primary target.
+    ledger_path = stage(tmp)
+    obj = extract(base_text)
+    for item in claim(obj, "C1")["submission"]["targets"]:
+        if item["fit"] == "primary":
+            item["fit"] = "secondary"
+    expect_rejected(
+        "a submission with no primary target is rejected",
+        rebuild(base_text, obj), ledger_path, "exactly one primary target",
+    )
+
+    # 14. An open-source holding claim with no oss_verification block.
+    ledger_path = stage(tmp)
+    obj = extract(base_text)
+    claim(obj, "C1")["acceptance"].pop("oss_verification", None)
+    expect_rejected(
+        "an open-source holding claim must verify policy, timeline, history, preference",
+        rebuild(base_text, obj), ledger_path, "oss_verification",
     )
 
 if failures:

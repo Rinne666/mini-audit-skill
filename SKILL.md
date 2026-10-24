@@ -1,17 +1,25 @@
 ---
 name: mini-adjudication
 description: |
-  Judge whether a reported vulnerability claim actually holds, and whether it would
-  be accepted if submitted. Use when you have a vulnerability claim — from a scanner,
-  a colleague, an upstream issue, a security advisory, or your own reading — and
-  need to know whether it is real and whether reporting it is worthwhile. Triggers on
-  "这个漏洞成立吗", "会不会被收录", "判断一下这个报告", "这个 issue 值得报吗",
-  "is this a real vulnerability", "is this reportable", "should I report this",
-  "validate this finding", "受理裁定", "报不报得上去".
-  Does NOT perform an audit, hunt for vulnerabilities, or submit anything.
+  Post-audit vulnerability acceptance standard. Loads ONLY after an audit has
+  produced findings (e.g. from `security-audit`): it judges each audited claim —
+  does it hold, and would anyone accept it (maintainer advisory, CVE via CNA,
+  CNVD, an SRC, a bounty platform) — verifies it one-by-one against the target's
+  own security policy, commit timeline, historical similar vulnerabilities and
+  maintainer preference when the target is open source, and closes with the
+  submission summary: core business, developer awareness, trigger configuration,
+  boundary crossed, and where to submit. Triggers on "审计出漏洞了，帮我判断
+  哪些能报", "这个漏洞能不能报", "报给谁", "CNVD 收不收", "能不能申请 CVE",
+  "这个洞值得提交吗", "is this reportable", "should I report this", "would they
+  accept this", "validate this finding".
+  Does NOT audit, hunt for vulnerabilities, or submit anything.
 ---
 
 # mini-adjudication
+
+A **post-audit** skill. The audit finds; this skill judges. Loading it
+before findings exist is a category error — there is nothing to
+adjudicate.
 
 Two separate questions, and conflating them is the most common way good
 research gets wasted:
@@ -27,10 +35,14 @@ Answering (1) with (2)'s reasoning — or skipping (1) entirely — produces
 reports that are closed, and burns the reporter's credibility with the
 project for the reports that follow.
 
-This skill takes **claims**, not findings. A claim arrives from somewhere:
+This skill takes **claims**, not findings. In its normal flow the claims
+arrive from an audit that just finished (`security-audit` or the model's
+own review), each with its `file:line` anchors; they may also arrive from
 a scanner, a colleague, a published advisory, a bug bounty report, a
-half-formed suspicion during code reading. Its origin does not make it
-true. Your job is to decide, with evidence, what it is.
+half-formed suspicion during code reading. The claim's origin does not
+make it true. Your job is to decide, with evidence, what it is — and, for
+what holds, where it can be submitted under which platform's acceptance
+rules.
 
 The adjudication state lives in **one Markdown file** that the model edits
 every round (`templates/adjudication-notes.md`). The runtime validates
@@ -39,16 +51,26 @@ the verdict is correct.
 
 ## When to load this Skill
 
-Load when a **specific claim** needs adjudication — "is this real",
-"would they accept this", "should I report this", "这个漏洞成立吗",
-"会不会被收录", "这个 issue 值得报吗", "is this reportable".
+Load **after an audit has produced findings** — the audit step has closed
+with claims anchored to `file:line`, and the question has become "which
+of these can be reported, where, and how". Typical triggers: "审计出漏洞
+了，哪些能报", "这个漏洞能不能报", "报给谁", "CNVD 收不收", "能不能申请
+CVE", "这个 issue 值得报吗", "is this reportable", "should I report
+this".
 
 Do **not** load to *find* vulnerabilities. This skill never hunts, never
-scans, and never proposes new attack surface. If you do not yet have a
-claim, you need an audit instead. Do not load to write the final report
-prose for a claim already judged and accepted; this skill produces the
-**verdict** and the **disposition**, and the report draft that follows
-from it.
+scans, and never proposes new attack surface. If no audit findings
+exist yet, run an audit first (`security-audit` or equivalent) and come
+back with its claims. Do not load to write the final report prose for a
+claim already judged and accepted; this skill produces the **verdict**,
+the **disposition**, the **submission summary**, and the report draft
+that follows from them.
+
+**Intake gate.** The first act is to enumerate the claims the audit
+produced, each with its anchors, into the notes file's Claims Under
+Adjudication table. If the user arrives with no findings and asks this
+skill to look for some, stop and say so — the answer is an audit, not an
+adjudication.
 
 ## Session-start check (Runtime enforcement)
 
@@ -201,8 +223,40 @@ project's documentation, its published advisories and how they
 classified similar issues, and the maintainer's own prior refusals all
 define the boundary. A report judged against the wrong acceptance model
 is worse than no report. If the project publishes no policy, derive the
-model from its documentation and mark it **derived** — and say so in
-the report, because you cannot cite an authority you invented.
+model from its documentation and mark it **derived** — and say so in the
+report, because you cannot cite an authority you invented.
+
+Record the **target profile** up front: kind (`open_source` /
+`closed_product` / `web_service`), name, where the policy lives
+(`stated` / `derived` / `none`), and the channel the project's own
+advisory history shows it uses. Every verdict below is relative to it.
+
+**For an open-source target, verify the audit result against the
+project's own record — one by one.** This is not optional background
+reading; each row lands in the notes file's OSS Verification section
+and in the JSON `oss_verification` block, and delivery is blocked
+without it:
+
+1. **The security policy, checked against this claim's shape.** What
+   does `SECURITY.md` (or `security.txt`, the security docs, the
+   advisory page) say about this kind of issue — in scope, out of
+   scope, which channel, which classification? 
+   (`references/acceptance-policy.md`)
+2. **The commit timeline.** Which commit introduced the defect, which
+   releases carry it, is it fixed, is it already published as an
+   advisory? Every field is a cited fact or an explicit
+   `untraced — reason`. (`references/commit-timeline.md`)
+3. **Historical similar vulnerabilities.** GHSA/OSV/NVD, the advisory
+   table, the fix history of the same sink: has this shape appeared
+   before, and was it released as a *security fix*, *hardening*, a
+   *bug fix*, or *wontfix*? (`references/historical-similarity.md`)
+4. **The maintainer's demonstrated preference.** How they label, credit,
+   and publish; what they argue about; what they close. Their history
+   is the acceptance model in action. (`references/historical-similarity.md`)
+
+A holding claim that skips this verification may still be technically
+right — and still be a duplicate of a published advisory, a re-litigated
+wontfix, or a report into a channel the project never reads.
 
 Then answer the **three acceptance questions**, each with cited
 evidence:
@@ -312,6 +366,35 @@ fix. Impact evidence uses only data you created; if real user data was
 reachable, say "confirmed reachable, contents not retrieved" and move
 on.
 
+**The submission summary** (`templates/submission-summary.md`) closes
+every adjudication that has anything reportable — the 可申报总结. One
+row per `report` / `rewrite_then_report` claim, answering what a
+triager asks in the first ninety seconds, each with cited evidence:
+
+- **Core business** — is the defect in the product's advertised main
+  line, or in a peripheral path?
+- **Developer awareness** — did the developers notice and comment
+  (TODO/FIXME/partial guard/linked issue), or is this news to them?
+- **Trigger configuration** — does firing it need a special,
+  non-default configuration? This answer is cross-checked mechanically
+  against the derived premise: `special_config_required: true` cannot
+  coexist with an `attacker_only` premise.
+- **Boundary crossed** — the one sentence, from rung to capability.
+- **The target list** — exactly one `primary` target
+  (`vendor_advisory` / `cve_cna` / `cnvd` / `src_platform` /
+  `bounty_platform` / `hardening_channel`), everything else
+  `secondary` or `unsuitable` with its reason, per
+  `references/submission-targets.md` — the distilled acceptance rules
+  of the maintainers, CNAs, CNVD (通用型 / 事件型), the SRCs, and the
+  bounty platforms. Two primaries mean duplicate intake.
+
+The summary also carries the blocking facts: every
+`needs_more_evidence` claim with its missing fact, every `aware`
+finding with the reframing it forces, every `untraced` timeline field
+with what a trace would change. If the summary does not answer "what
+do I submit, where, and why is each one safe to submit", the
+adjudication is not done.
+
 **Mechanical rules that are cheap to get wrong:**
 
 - **CVSS**: compute with the platform's own calculator. Cross-check with
@@ -361,6 +444,18 @@ adjudication is incomplete.
   advisories, and prior classifications.
 - `references/premise-analysis.md` — every time Q1 is answered, and
   whenever the premise classification is not obvious.
+- `references/commit-timeline.md` — every open-source holding claim:
+  tracing the introducing commit, the releases that carry the defect,
+  the fix state, and whether it is already published.
+- `references/historical-similarity.md` — every open-source holding
+  claim: finding similar prior issues, their classification, and the
+  maintainer's demonstrated preference — including whether the
+  developers already noticed this risk.
+- `references/submission-targets.md` — when choosing where a holding
+  claim goes: maintainer advisory, CVE via CNA, CNVD, an SRC, a bounty
+  platform, or a hardening channel.
+- `references/submission-summary.md` — at the Deliver stage, when the
+  submittable list is assembled from the four summary dimensions.
 - `references/report-writing.md` — when writing a report draft, and
   before every submit.
 - `references/ordering-and-channels.md` — when several claims are
@@ -403,19 +498,30 @@ Do not stop because the claim queue is empty. Before delivering:
   explicitly deferred with a reason.
 - Every claim that reached the Assess stage has all three acceptance
   answers with cited evidence.
+- The target profile is recorded: kind, name, policy source and
+  location, the channel the target demonstrably uses.
+- Every open-source holding claim carries its OSS verification: policy
+  check, commit timeline (cited or `untraced — reason`), similar
+  issues with their classification, and the maintainer's preference.
 - Every `does_not_hold` names the specific assertion that was refuted.
 - Every `needs_more_evidence` names the exact missing fact and a safe
   way to observe it.
 - Every `already_fixed` cites the fix.
 - Every `holds` claim has a subject stated as an invariant.
+- Every reportable claim carries its submission block: core business,
+  developer awareness, trigger configuration (consistent with the
+  premise), boundary crossed, and a target list with exactly one
+  primary.
 - Every absence claim cites two distinct zero-match searches, and every
   one of them still reproduces.
-- The notes file carries all six coverage sections: Claims Under
+- The notes file carries all eight coverage sections: Claims Under
   Adjudication, Claim Decomposition, Assertion Ledger, Acceptance
-  Answers, Verdict Table, Refutations Considered.
+  Answers, OSS Verification, Verdict Table, Submission Summary,
+  Refutations Considered.
 - Every CVSS vector was cross-checked and matches its stated score.
 - The delivery artifact matches the verdict — no report for a claim
-  that does not hold.
+  that does not hold — and the submission summary answers "what do I
+  submit, where, and why is each one safe".
 - The work queue is closed, with a completed `final_review` task that
   challenged the `does_not_hold` and `needs_more_evidence` verdicts.
 
@@ -438,8 +544,9 @@ not a neutral claim; it is a claim someone will later act on.
 
 Delivery requires the adjudication notes file to contain a claim table
 with both verdicts, an assertion ledger with per-assertion evidence, a
-closed work queue with a completed `final_review` task, and a channel
-decision.
+closed work queue with a completed `final_review` task, a channel
+decision, a target profile, and — for every reportable claim — a
+complete submission block.
 
 Every claim needs at least one **assertion** row, and every assertion
 needs a verdict from a closed vocabulary. A claim with no assertions
@@ -461,8 +568,17 @@ The acceptability verdict must follow from the three answers:
   boundary `declared_and_consistent` → `decline`.
 
 Every claim that is `accept` or `accept_after_rewrite` must cite a
-captured source read, and its subject must be phrased as an invariant
-rather than a consequence.
+captured source read, its subject must be phrased as an invariant
+rather than a consequence, and it must carry a `submission` block:
+core business, developer awareness, trigger configuration, boundary
+crossed, and a target list with exactly one primary — a
+`special_config_required` of true next to an `attacker_only` premise
+is rejected, because the two answers describe the same fact and one
+of them is wrong. When the target is open source, every holding claim
+must additionally carry its `oss_verification` block: the policy
+check, the commit timeline (every field a cited fact or an explicit
+`untraced — reason`), the similar issues with their classification,
+and the maintainer's demonstrated preference.
 
 Capture source searches and bounded reads with `runtime/evidence_log.py`
 and cite their IDs. Treat uncaptured tool output as exploratory unless
@@ -477,10 +593,13 @@ The validator checks cited IDs and hashes, captured reads for asserted
 claims, two distinct zero-match searches for any `absent` divergence and
 for any unresolved assertion that rests on search evidence alone, the
 reproduction of every recorded zero-match search, the mechanical
-validity and acceptability derivations, the invariant subject, all six
-coverage sections, and work-queue closure. Exit 0 means the structure is
-sound; it does not certify that the verdict is correct. The reviewer
-still challenges every verdict.
+validity and acceptability derivations, the invariant subject, the
+target profile, the oss_verification block on open-source holding
+claims, the submission block on reportable claims (including the
+trigger-configuration/premise consistency and the exactly-one-primary
+rule), all eight coverage sections, and work-queue closure. Exit 0
+means the structure is sound; it does not certify that the verdict is
+correct. The reviewer still challenges every verdict.
 
 For end-to-end verification across sessions, `runtime/regression.py`
 runs the derivation tests, the counter-example tests,
@@ -489,10 +608,13 @@ validate-adjudication and check-skill-loaded against every fixture in
 has drifted.
 
 `runtime/test_adjudication_counterexamples.py` is the half that matters
-most: it takes the correct fixture, breaks it ten ways — an absence that
+most: it takes the correct fixture, breaks it fourteen ways — an absence that
 does not reproduce, a verdict asserted instead of derived, a
 non-vulnerability dressed up as an unacceptable one, a subject written as
-a consequence, the same search counted twice — and asserts that each
+a consequence, the same search counted twice, a reportable claim with no
+submission block, a special-configuration answer contradicting its
+attacker-only premise, a submission with no primary target, an
+open-source claim with no verification block — and asserts that each
 broken version is rejected. A validator that only ever sees valid input
 proves nothing.
 

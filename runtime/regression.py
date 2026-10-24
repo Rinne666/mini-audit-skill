@@ -11,8 +11,8 @@ primitives in this repo:
 
   - test-validate-adjudication (the mechanical derivation rules that
     turn assertions and acceptance answers into verdicts)
-  - test-adjudication-counterexamples (ten ways a correct adjudication
-    can be broken, each of which must be rejected)
+  - test-adjudication-counterexamples (fourteen ways a correct
+    adjudication can be broken, each of which must be rejected)
   - validate-adjudication (atomic propositions, evidence citations,
     two-layer verdict consistency, work queue closure, channel)
   - check-skill-loaded (file-fingerprint manifest)

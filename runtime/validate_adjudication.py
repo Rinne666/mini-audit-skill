@@ -21,8 +21,12 @@ one is worthless.
 This is a structural check, not a judgement. It cannot prove a verdict
 is correct, and it cannot prove a maintainer will accept a report. It
 proves the verdicts are recorded, that each one cites evidence that
-exists, that the absence evidence still reproduces, and that the two
-verdicts were derived rather than asserted.
+exists, that the absence evidence still reproduces, that the two
+verdicts were derived rather than asserted, that an open-source target
+carries its verification block (policy, commit timeline, similar
+issues, maintainer preference), and that every reportable claim's
+submission block is complete with exactly one primary target whose
+trigger-configuration answer agrees with its derived premise.
 
 Usage:
     python runtime/validate_adjudication.py path/to/adjudication-notes.md \\
@@ -69,6 +73,19 @@ PREMISE_KINDS = {
 BOUNDARY_STATES = {"declared_and_violated", "not_declared", "declared_and_consistent"}
 DIVERGENCE_STATES = {"present", "absent"}
 ACCEPTABILITY = {"accept", "accept_after_rewrite", "decline"}
+TARGET_KINDS = {"open_source", "closed_product", "web_service"}
+POLICY_SOURCES = {"stated", "derived", "none"}
+CLASSIFICATIONS = {"security_fix", "hardening", "bug_fix", "wontfix", "unknown"}
+SUBMISSION_TARGETS = {
+    "vendor_advisory",
+    "cve_cna",
+    "cnvd",
+    "src_platform",
+    "bounty_platform",
+    "hardening_channel",
+}
+TARGET_FITS = {"primary", "secondary", "unsuitable"}
+AWARENESS_STATES = {"aware", "false", "unknown"}
 FILE_LINE = re.compile(r"^.+:[0-9]+(-[0-9]+)?$")
 
 # A subject stated as a consequence rather than an invariant.
@@ -91,9 +108,16 @@ COVERAGE_MARKERS = (
     ("Claim Decomposition", re.compile(r"^#{1,4}\s*Claim Decomposition", re.IGNORECASE | re.MULTILINE)),
     ("Assertion Ledger", re.compile(r"^#{1,4}\s*Assertion Ledger", re.IGNORECASE | re.MULTILINE)),
     ("Acceptance Answers", re.compile(r"^#{1,4}\s*Acceptance Answers", re.IGNORECASE | re.MULTILINE)),
+    ("OSS Verification", re.compile(r"^#{1,4}\s*OSS Verification", re.IGNORECASE | re.MULTILINE)),
     ("Verdict Table", re.compile(r"^#{1,4}\s*Verdict Table", re.IGNORECASE | re.MULTILINE)),
+    ("Submission Summary", re.compile(r"^#{1,4}\s*Submission Summary", re.IGNORECASE | re.MULTILINE)),
     ("Refutations Considered", re.compile(r"^#{1,4}\s*Refutations Considered", re.IGNORECASE | re.MULTILINE)),
 )
+
+# Every coverage section above is always required. For a target that is
+# not open source, the OSS Verification section states "not applicable"
+# with the reason — it is the JSON oss_verification object that is
+# conditional on the target kind, not the section.
 
 
 def _extract_adjudication_table(markdown_text: str) -> tuple[dict | None, str | None]:
@@ -367,8 +391,226 @@ def _derive_acceptability(premise_kind: str, boundary_state: str, divergence_sta
     return "decline"
 
 
+def _special_config_consistent(special_config_required: object, premise_kind: object) -> bool:
+    """A trigger-configuration answer must agree with the derived premise.
+
+    `special_config_required` and the premise kind describe the same
+    fact from two sides: who creates the condition that makes the
+    defect reachable. An `attacker_only` premise means the attacker
+    creates that condition alone, on the default configuration — so a
+    summary that says the trigger needs special configuration while the
+    premise says attacker-only has one of the two answers wrong.
+    """
+    if special_config_required is True and premise_kind == "attacker_only":
+        return False
+    return True
+
+
+def _non_empty_str(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_target(obj: dict) -> list[str]:
+    """The target profile every verdict in the file is relative to."""
+    errors: list[str] = []
+    target = obj.get("target")
+    if not isinstance(target, dict):
+        return ["target must be an object (kind / name / security_policy / preferred_channel)"]
+    kind = target.get("kind")
+    if kind not in TARGET_KINDS:
+        errors.append(f"target.kind must be one of {sorted(TARGET_KINDS)}, got {kind!r}")
+    if not _non_empty_str(target.get("name")):
+        errors.append("target.name must be non-empty")
+    policy = target.get("security_policy")
+    if not isinstance(policy, dict):
+        errors.append("target.security_policy must be an object with source and ref")
+    else:
+        if policy.get("source") not in POLICY_SOURCES:
+            errors.append(
+                f"target.security_policy.source must be one of {sorted(POLICY_SOURCES)}, "
+                f"got {policy.get('source')!r}"
+            )
+        if not _non_empty_str(policy.get("ref")):
+            errors.append("target.security_policy.ref must be non-empty (the policy location, or 'none — …')")
+    if not _non_empty_str(target.get("preferred_channel")):
+        errors.append("target.preferred_channel must be non-empty")
+    return errors
+
+
+def _validate_oss_verification(at: str, oss: object, records: dict[str, dict]) -> list[str]:
+    """The open-source verification block: policy, timeline, history, preference.
+
+    Every field is a cited fact or an explicit untraced/none-found with
+    what was searched. These facts come from git history, advisory
+    databases, and policy documents rather than the source tree, so
+    they cite their own references; only the evidence_ids list is
+    ledger-backed.
+    """
+    if not isinstance(oss, dict):
+        return [f"{at}.acceptance.oss_verification must be an object for an open-source target"]
+    errors: list[str] = []
+    if not _non_empty_str(oss.get("policy_verified")):
+        errors.append(
+            f"{at}.acceptance.oss_verification.policy_verified must state what the project's "
+            f"policy says about this claim's shape, with its reference"
+        )
+    timeline = oss.get("commit_timeline")
+    if not isinstance(timeline, dict):
+        errors.append(
+            f"{at}.acceptance.oss_verification.commit_timeline must be an object "
+            f"(introducing_commit / released_in / fix_state / published_as)"
+        )
+    else:
+        for field in ("introducing_commit", "released_in", "fix_state", "published_as"):
+            if not _non_empty_str(timeline.get(field)):
+                errors.append(
+                    f"{at}.acceptance.oss_verification.commit_timeline.{field} must be non-empty "
+                    f"(a cited fact, or 'untraced — reason' / 'none found — searched …')"
+                )
+    similar = oss.get("historical_similar")
+    if not isinstance(similar, list) or not similar:
+        errors.append(
+            f"{at}.acceptance.oss_verification.historical_similar must list at least one "
+            f"similar issue (or the none-found entry with what was searched)"
+        )
+    else:
+        seen_refs: set[str] = set()
+        for k, item in enumerate(similar):
+            if not isinstance(item, dict):
+                errors.append(f"{at}.acceptance.oss_verification.historical_similar[{k}] must be an object")
+                continue
+            ref = item.get("ref")
+            if not _non_empty_str(ref):
+                errors.append(
+                    f"{at}.acceptance.oss_verification.historical_similar[{k}].ref must be non-empty "
+                    f"(an advisory/commit/issue id, or the none-found entry)"
+                )
+            elif ref in seen_refs:
+                errors.append(
+                    f"{at}.acceptance.oss_verification.historical_similar[{k}] repeats ref {ref!r}"
+                )
+            else:
+                seen_refs.add(ref)
+            if item.get("classification") not in CLASSIFICATIONS:
+                errors.append(
+                    f"{at}.acceptance.oss_verification.historical_similar[{k}].classification "
+                    f"must be one of {sorted(CLASSIFICATIONS)}, got {item.get('classification')!r}"
+                )
+    if not _non_empty_str(oss.get("maintainer_preference")):
+        errors.append(
+            f"{at}.acceptance.oss_verification.maintainer_preference must state the project's "
+            f"demonstrated acceptance pattern, with its citations"
+        )
+    if not _valid_evidence_ids(oss.get("evidence_ids"), records):
+        errors.append(f"{at}.acceptance.oss_verification must cite existing evidence_ids")
+    elif not _cites_source_read(oss.get("evidence_ids"), records):
+        errors.append(
+            f"{at}.acceptance.oss_verification must cite a captured source read "
+            f"(the code the timeline and history are about)"
+        )
+    return errors
+
+
+def _validate_submission(at: str, submission: object, premise_kind: object) -> list[str]:
+    """The submission block every reportable claim carries.
+
+    Four dimensions a triager asks in the first ninety seconds — core
+    business, developer awareness, trigger configuration, boundary
+    crossed — plus the target list. Exactly one target may be primary;
+    two primary targets mean duplicate intake.
+    """
+    if not isinstance(submission, dict):
+        return [f"{at}.submission is required for a reportable claim (core / aware / config / boundary / targets)"]
+    errors: list[str] = []
+
+    core = submission.get("core_business")
+    if not isinstance(core, dict) or not isinstance(core.get("in_core"), bool):
+        errors.append(f"{at}.submission.core_business.in_core must be true or false")
+    if not isinstance(core, dict) or not _non_empty_str(core.get("evidence")):
+        errors.append(f"{at}.submission.core_business.evidence must cite what decides in-core or not")
+
+    awareness = submission.get("developer_awareness")
+    if not isinstance(awareness, dict) or awareness.get("aware") not in AWARENESS_STATES:
+        errors.append(
+            f"{at}.submission.developer_awareness.aware must be one of {sorted(AWARENESS_STATES)}, "
+            f"got {awareness.get('aware') if isinstance(awareness, dict) else awareness!r}"
+        )
+    if not isinstance(awareness, dict) or not _non_empty_str(awareness.get("evidence")):
+        errors.append(f"{at}.submission.developer_awareness.evidence must cite the search or the comment found")
+
+    config = submission.get("trigger_configuration")
+    if not isinstance(config, dict) or not isinstance(config.get("special_config_required"), bool):
+        errors.append(
+            f"{at}.submission.trigger_configuration.special_config_required must be true or false"
+        )
+    if not isinstance(config, dict) or not _non_empty_str(config.get("default_configuration")):
+        errors.append(
+            f"{at}.submission.trigger_configuration.default_configuration must state the "
+            f"default, cited"
+        )
+    if not isinstance(config, dict) or not _non_empty_str(config.get("evidence")):
+        errors.append(f"{at}.submission.trigger_configuration.evidence must be non-empty")
+    if isinstance(config, dict) and not _special_config_consistent(
+        config.get("special_config_required"), premise_kind
+    ):
+        errors.append(
+            f"{at}.submission says special configuration is required while the premise is "
+            f"'attacker_only'; the two answers describe the same fact and one of them is wrong"
+        )
+
+    boundary = submission.get("boundary_crossed")
+    if not isinstance(boundary, dict):
+        errors.append(f"{at}.submission.boundary_crossed must state from → to")
+    else:
+        if not _non_empty_str(boundary.get("from")) or not _non_empty_str(boundary.get("to")):
+            errors.append(
+                f"{at}.submission.boundary_crossed must name both rungs (from and to); "
+                f"a claim with no boundary crossed is not a vulnerability"
+            )
+
+    targets = submission.get("targets")
+    if not isinstance(targets, list) or not targets:
+        errors.append(
+            f"{at}.submission.targets must list where this claim can go "
+            f"(vendor_advisory / cve_cna / cnvd / src_platform / bounty_platform / hardening_channel)"
+        )
+    else:
+        primaries = 0
+        for k, item in enumerate(targets):
+            if not isinstance(item, dict):
+                errors.append(f"{at}.submission.targets[{k}] must be an object")
+                continue
+            if item.get("target") not in SUBMISSION_TARGETS:
+                errors.append(
+                    f"{at}.submission.targets[{k}].target must be one of "
+                    f"{sorted(SUBMISSION_TARGETS)}, got {item.get('target')!r}"
+                )
+            fit = item.get("fit")
+            if fit not in TARGET_FITS:
+                errors.append(
+                    f"{at}.submission.targets[{k}].fit must be one of {sorted(TARGET_FITS)}, got {fit!r}"
+                )
+            elif fit == "primary":
+                primaries += 1
+            if not _non_empty_str(item.get("reason")):
+                errors.append(f"{at}.submission.targets[{k}].reason must be non-empty")
+        if primaries == 0:
+            errors.append(
+                f"{at}.submission.targets must name exactly one primary target; "
+                f"no primary means nothing is submitted and the claim is not reportable"
+            )
+        elif primaries > 1:
+            errors.append(
+                f"{at}.submission.targets names {primaries} primary targets; "
+                f"two primaries mean duplicate intake"
+            )
+    return errors
+
+
 def _validate_claims(obj: dict, records: dict[str, dict]) -> list[str]:
     errors: list[str] = []
+    target = obj.get("target")
+    target_kind = target.get("kind") if isinstance(target, dict) else None
     claims = obj.get("claims")
     if not isinstance(claims, list):
         return ["claims must be a list"]
@@ -477,6 +719,8 @@ def _validate_claims(obj: dict, records: dict[str, dict]) -> list[str]:
                 errors.append(f"{at} has validity 'holds' and requires an acceptance object")
             else:
                 errors.extend(_validate_acceptance(at, acceptance, records))
+                if target_kind == "open_source":
+                    errors.extend(_validate_oss_verification(at, acceptance.get("oss_verification"), records))
         else:
             if acceptance is not None:
                 errors.append(
@@ -520,6 +764,14 @@ def _validate_claims(obj: dict, records: dict[str, dict]) -> list[str]:
                         f"{at}.original_subject is required when action is 'rewrite_then_report' "
                         f"(the consequence framing it replaced)"
                     )
+
+        # A reportable claim carries its submission block: the four
+        # summary dimensions and the target list. The premise it is
+        # cross-checked against comes from the acceptance object, which
+        # a reportable claim necessarily has (validity must be holds).
+        if action in {"report", "rewrite_then_report"}:
+            premise_kind = acceptance.get("premise_kind") if isinstance(acceptance, dict) else None
+            errors.extend(_validate_submission(at, claim.get("submission"), premise_kind))
 
         if not _valid_evidence_ids(claim.get("evidence_ids"), records):
             errors.append(f"{at} must cite existing evidence_ids")
@@ -682,9 +934,11 @@ def validate(text: str, records: dict[str, dict]) -> tuple[int, list[str]]:
     if obj is None:
         return 1, [extract_error or "adjudication table could not be extracted"]
 
-    for required in ("claims", "coverage_paragraph_present", "work_queue", "channel"):
+    for required in ("claims", "coverage_paragraph_present", "work_queue", "channel", "target"):
         if required not in obj:
             errors.append(f"missing required field: {required}")
+
+    errors.extend(_validate_target(obj))
 
     if obj.get("coverage_paragraph_present") is not True:
         errors.append("coverage_paragraph_present must be true")
