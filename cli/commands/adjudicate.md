@@ -27,6 +27,16 @@ python {{SKILL_DIR}}\runtime\check_skill_loaded.py
 
 ## 第 2 步 — 三阶段裁定（按 SKILL.md 执行）
 
+每一轮都跑驱动器并照它打印的那一条指令做，做完重跑：
+
+```text
+python {{SKILL_DIR}}\runtime\validate_adjudication.py <adjudication-notes.md> --evidence-ledger <evidence.jsonl> --next
+```
+
+阶段门禁：`--phase adjudicate`（拆断言、断言台账、推导 validity）→
+`--phase assess`（+三个受理问题、OSS 核验）→ `--phase deliver`（+提交块、
+工作队列闭合、渠道）。上一阶段门禁不绿，下一阶段的工作不算数。
+
 1. **Adjudicate**：把每条 finding 登记为 claim，拆断言、做反证尝试，
    用 `runtime/evidence_log.py` 记录证据，产出 validity verdict。
 2. **Assess**：对 holds 的 claim 回答三个受理问题；目标是开源项目时
@@ -36,7 +46,7 @@ python {{SKILL_DIR}}\runtime\check_skill_loaded.py
 3. **Deliver**：产出 `templates/submission-summary.md` 可申报总结——
    **按危害等级降序排列的漏洞表格**（critical→high→medium→low，
    每行含：危害等级/核心业务/开发者是否已知/是否需特殊配置/跨安全
-   边界/目标平台，目标平台有且仅一个 primary），报告草稿用
+   边界/目标平台，目标平台有且仅有一个 primary），报告草稿用
    `templates/advisory.md`。
 
 工作文件写到审计 run 目录旁的 `adjudication/` 子目录（adjudication-notes.md
@@ -45,11 +55,13 @@ python {{SKILL_DIR}}\runtime\check_skill_loaded.py
 ## 第 3 步 — 交付前硬门禁
 
 ```text
-python {{SKILL_DIR}}\runtime\validate_adjudication.py <adjudication-notes.md> --evidence-ledger <evidence.jsonl>
+python {{SKILL_DIR}}\runtime\validate_adjudication.py <adjudication-notes.md> --evidence-ledger <evidence.jsonl> --phase deliver
 ```
 
 非零退出 → 修复后重跑，不得带病交付。CVSS 向量必须过
-`runtime/cvss31.py` 交叉校验。
+`runtime/cvss31.py` 交叉校验。注意：Stop hook（`stop_gate.py`）会在
+存在 notes 文件的项目里于每轮结束自动复检——记录状态自相矛盾、或已
+声称交付（写了产物 / action=report）但门禁未过时，回合会被拦下。
 
 ## 红线
 

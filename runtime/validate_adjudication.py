@@ -30,10 +30,25 @@ trigger-configuration answer agrees with its derived premise.
 
 Usage:
     python runtime/validate_adjudication.py path/to/adjudication-notes.md \\
-        --evidence-ledger path/to/evidence.jsonl
+        --evidence-ledger path/to/evidence.jsonl [--phase adjudicate|assess|deliver] [--next]
+
+The validator is phase-gated so that running it mid-work returns one
+actionable instruction instead of a wall of end-state failures:
+
+    --phase adjudicate  only what the Adjudicate stage owes: decomposition,
+                        assertion ledger rows, derived validity verdicts
+    --phase assess      the above plus the three acceptance answers and the
+                        OSS verification block for every holding claim
+    --phase deliver     everything, including submission blocks, work-queue
+                        closure and the channel decision (the default, and
+                        the delivery gate)
+    --next              walk the phases in order, print the single next
+                        requirement as `NEXT [phase]: ...`, or `READY` when
+                        all three gates are green. The driver of the loop.
 
 Exit codes:
-    0  all structural requirements passed
+    0  all structural requirements passed (--next also returns 0; read the
+       printed instruction instead of the exit code)
     1  one or more requirements failed
     2  usage error, or a required file is missing
 """
@@ -53,6 +68,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "schemas" / "adjudication.schema.json"
 
 VALIDITY = {"holds", "does_not_hold", "needs_more_evidence", "already_fixed"}
+PHASES = ("adjudicate", "assess", "deliver")
+# Which top-level JSON fields each phase owes. Work queue closure and the
+# channel decision are delivery-time facts; requiring them earlier would
+# make every mid-work run red for the wrong reason.
+REQUIRED_TOP_FIELDS: dict[str, tuple[str, ...]] = {
+    "adjudicate": ("claims", "coverage_paragraph_present", "target"),
+    "assess": ("claims", "coverage_paragraph_present", "target"),
+    "deliver": ("claims", "coverage_paragraph_present", "work_queue", "channel", "target"),
+}
 MAX_SEARCH_RESULTS_PER_FILE = 500
 ACTIONS = {
     "report",
@@ -239,6 +263,13 @@ def _reverify_zero_match(ledger_parent: Path, record: dict) -> str | None:
     base = (ledger_parent / Path(_normalize_rel(base_raw))).resolve()
     if not base.is_dir():
         return None
+    # The recorded search paths must all exist under the recorded base.
+    # When they do not, the workspace has been moved or copied and the
+    # source tree is not reachable from here — skipping is the honest
+    # answer, and the alternative (running rg in the wrong directory)
+    # reports a spurious failure that poisons the gate.
+    if not all((base / _normalize_rel(path)).exists() for path in paths):
+        return None
     if shutil.which("rg") is None:
         return None
     command = [
@@ -410,6 +441,11 @@ def _special_config_consistent(special_config_required: object, premise_kind: ob
 
 def _non_empty_str(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _subject_is_consequence(subject: str) -> bool:
+    lowered = subject.lower()
+    return any(re.search(pattern, lowered) for pattern in CONSEQUENCE_PATTERNS)
 
 
 def _validate_target(obj: dict) -> list[str]:
@@ -617,7 +653,7 @@ def _validate_submission(at: str, submission: object, premise_kind: object) -> l
     return errors
 
 
-def _validate_claims(obj: dict, records: dict[str, dict]) -> list[str]:
+def _validate_claims(obj: dict, records: dict[str, dict], phase: str = "deliver") -> list[str]:
     errors: list[str] = []
     target = obj.get("target")
     target_kind = target.get("kind") if isinstance(target, dict) else None
@@ -722,25 +758,24 @@ def _validate_claims(obj: dict, records: dict[str, dict]) -> list[str]:
                 f"(assertion verdicts: {assertion_verdicts})"
             )
 
-        # Acceptance only exists for a claim that holds.
+        # Acceptance only exists for a claim that holds. It is owed from
+        # the assess phase on; during adjudicate a drafted acceptance is
+        # tolerated (the model may answer early), so it is not yet checked.
         acceptance = claim.get("acceptance")
-        if validity == "holds":
-            if not isinstance(acceptance, dict):
-                errors.append(f"{at} has validity 'holds' and requires an acceptance object")
+        if phase in {"assess", "deliver"}:
+            if validity == "holds":
+                if not isinstance(acceptance, dict):
+                    errors.append(f"{at} has validity 'holds' and requires an acceptance object")
+                else:
+                    errors.extend(_validate_acceptance(at, acceptance, records))
+                    if target_kind == "open_source":
+                        errors.extend(_validate_oss_verification(at, acceptance.get("oss_verification"), records))
             else:
-                errors.extend(_validate_acceptance(at, acceptance, records))
-                if target_kind == "open_source":
-                    errors.extend(_validate_oss_verification(at, acceptance.get("oss_verification"), records))
-        else:
-            if acceptance is not None:
-                errors.append(
-                    f"{at} has validity {validity!r} and must not carry an acceptance verdict; "
-                    f"a claim that does not hold is not 'unacceptable', it is not a vulnerability"
-                )
-            if action in {"report", "rewrite_then_report"}:
-                errors.append(
-                    f"{at} has validity {validity!r} and must not be actioned as a report"
-                )
+                if acceptance is not None:
+                    errors.append(
+                        f"{at} has validity {validity!r} and must not carry an acceptance verdict; "
+                        f"a claim that does not hold is not 'unacceptable', it is not a vulnerability"
+                    )
 
         # Action must match the validity verdict.
         if validity == "does_not_hold" and action != "no_report":
@@ -753,35 +788,36 @@ def _validate_claims(obj: dict, records: dict[str, dict]) -> list[str]:
             errors.append(
                 f"{at}.action must be report / rewrite_then_report / hardening_note when validity is 'holds'"
             )
+        if validity != "holds" and action in {"report", "rewrite_then_report"}:
+            errors.append(f"{at} has validity {validity!r} and must not be actioned as a report")
 
-        # A reportable claim needs an invariant subject.
-        if action in {"report", "rewrite_then_report"}:
-            subject = claim.get("subject")
-            if not isinstance(subject, str) or not subject.strip():
-                errors.append(f"{at}.subject is required for a reportable claim")
-            else:
-                lowered = subject.lower()
-                for pattern in CONSEQUENCE_PATTERNS:
-                    if re.search(pattern, lowered):
-                        errors.append(
-                            f"{at}.subject states a consequence, not an invariant: {subject!r}"
-                        )
-                        break
-            if action == "rewrite_then_report":
-                original = claim.get("original_subject")
-                if not isinstance(original, str) or not original.strip():
+        # The invariant subject and the submission block are delivery-time
+        # artifacts: they are checked when the deliver phase is asked for.
+        if phase == "deliver":
+            # A reportable claim needs an invariant subject.
+            if action in {"report", "rewrite_then_report"}:
+                subject = claim.get("subject")
+                if not isinstance(subject, str) or not subject.strip():
+                    errors.append(f"{at}.subject is required for a reportable claim")
+                elif _subject_is_consequence(subject):
                     errors.append(
-                        f"{at}.original_subject is required when action is 'rewrite_then_report' "
-                        f"(the consequence framing it replaced)"
+                        f"{at}.subject states a consequence, not an invariant: {subject!r}"
                     )
+                if action == "rewrite_then_report":
+                    original = claim.get("original_subject")
+                    if not isinstance(original, str) or not original.strip():
+                        errors.append(
+                            f"{at}.original_subject is required when action is 'rewrite_then_report' "
+                            f"(the consequence framing it replaced)"
+                        )
 
-        # A reportable claim carries its submission block: the four
-        # summary dimensions and the target list. The premise it is
-        # cross-checked against comes from the acceptance object, which
-        # a reportable claim necessarily has (validity must be holds).
-        if action in {"report", "rewrite_then_report"}:
-            premise_kind = acceptance.get("premise_kind") if isinstance(acceptance, dict) else None
-            errors.extend(_validate_submission(at, claim.get("submission"), premise_kind))
+            # A reportable claim carries its submission block: the four
+            # summary dimensions and the target list. The premise it is
+            # cross-checked against comes from the acceptance object, which
+            # a reportable claim necessarily has (validity must be holds).
+            if action in {"report", "rewrite_then_report"}:
+                premise_kind = acceptance.get("premise_kind") if isinstance(acceptance, dict) else None
+                errors.extend(_validate_submission(at, claim.get("submission"), premise_kind))
 
         if not _valid_evidence_ids(claim.get("evidence_ids"), records):
             errors.append(f"{at} must cite existing evidence_ids")
@@ -938,13 +974,21 @@ def _validate_channel(obj: dict) -> list[str]:
     return errors
 
 
-def validate(text: str, records: dict[str, dict]) -> tuple[int, list[str]]:
+def validate(text: str, records: dict[str, dict], phase: str = "deliver") -> tuple[int, list[str]]:
+    """Validate the notes file at one phase of the adjudication loop.
+
+    `--phase` exists so a mid-work run checks what the current stage owes
+    rather than everything the finished adjudication owes. A validator
+    that can only say "not done" teaches the model to stop running it.
+    """
+    if phase not in PHASES:
+        raise ValueError(f"unknown phase: {phase!r}")
     errors: list[str] = []
     obj, extract_error = _extract_adjudication_table(text)
     if obj is None:
         return 1, [extract_error or "adjudication table could not be extracted"]
 
-    for required in ("claims", "coverage_paragraph_present", "work_queue", "channel", "target"):
+    for required in REQUIRED_TOP_FIELDS[phase]:
         if required not in obj:
             errors.append(f"missing required field: {required}")
 
@@ -962,9 +1006,184 @@ def validate(text: str, records: dict[str, dict]) -> tuple[int, list[str]]:
             + ")"
         )
 
-    errors.extend(_validate_claims(obj, records))
-    errors.extend(_validate_work_queue(obj, records))
-    errors.extend(_validate_channel(obj))
+    errors.extend(_validate_claims(obj, records, phase=phase))
+
+    if phase == "deliver":
+        errors.extend(_validate_work_queue(obj, records))
+        errors.extend(_validate_channel(obj))
+
+    return (1 if errors else 0), errors
+
+
+def _assertion_row_complete(assertion: object) -> bool:
+    """A row the model has finished writing: type, statement, anchor, verdict.
+
+    Partial mode (below) checks completed rows and ignores half-written
+    ones, so an in-progress assertion never blocks a stop.
+    """
+    return (
+        isinstance(assertion, dict)
+        and assertion.get("verdict") in ASSERTION_VERDICTS
+        and assertion.get("type") in ASSERTION_TYPES
+        and _non_empty_str(assertion.get("statement"))
+        and _non_empty_str(assertion.get("anchor"))
+    )
+
+
+def validate_partial(text: str, records: dict[str, dict], deliver_claimed: bool = False) -> tuple[int, list[str]]:
+    """Stop-gate validation: what is written must be consistent.
+
+    This is the mode the harness Stop hook runs. It differs from
+    `validate` in one principle: completeness below delivery is not
+    enforced — an adjudication may honestly be mid-work when a turn
+    ends — but everything the file *has* recorded must be right, and
+    once delivery is claimed (an artifact written next to the notes, or
+    any claim actioned for report) the full deliver gate must pass.
+
+    Returns (0, []) when there is nothing yet to hold consistent.
+    """
+    obj, extract_error = _extract_adjudication_table(text)
+    if obj is None:
+        err = extract_error or ""
+        # A table that exists but does not parse is corruption; no table
+        # at all is a fresh template copy that has not been started. A
+        # ```json fence with no extractable object falls on the
+        # corruption side: someone started the table and broke it.
+        if "did not parse" in err or "```json" in text:
+            return 1, [err]
+        return 0, []
+
+    errors: list[str] = []
+
+    # The target profile and the coverage sections are scaffolded at
+    # intake; losing either is corruption, not progress.
+    if obj.get("target") is not None:
+        errors.extend(_validate_target(obj))
+    missing_sections = _missing_coverage_sections(text)
+    if missing_sections:
+        errors.append(
+            "notes file is missing coverage section(s): " + ", ".join(missing_sections)
+        )
+
+    claims = obj.get("claims")
+    if not isinstance(claims, list):
+        return 1, errors + ["claims must be a list"]
+
+    deliver = deliver_claimed or any(
+        isinstance(claim, dict) and claim.get("action") in {"report", "rewrite_then_report"}
+        for claim in claims
+    )
+
+    for i, claim in enumerate(claims):
+        if not isinstance(claim, dict):
+            errors.append(f"claims[{i}] must be an object")
+            continue
+        if not _non_empty_str(claim.get("claim")):
+            continue  # an intake row not filled in yet
+        at = f"claims[{i}]"
+        validity = claim.get("validity")
+        action = claim.get("action")
+
+        # Assertions: every completed row must be valid; a half-written
+        # row is honest in-progress state and does not block.
+        assertions = claim.get("assertions")
+        rows_complete = isinstance(assertions, list) and bool(assertions)
+        if isinstance(assertions, list):
+            for j, assertion in enumerate(assertions):
+                aj = f"{at}.assertions[{j}]"
+                if not isinstance(assertion, dict):
+                    errors.append(f"{aj} must be an object")
+                    rows_complete = False
+                    continue
+                if not _assertion_row_complete(assertion):
+                    rows_complete = False
+                    continue
+                for field in ("statement", "anchor", "refutation_attempted"):
+                    if not _non_empty_str(assertion.get(field)):
+                        errors.append(f"{aj}.{field} must be non-empty")
+                if not _valid_evidence_ids(assertion.get("evidence_ids"), records):
+                    errors.append(f"{aj} must cite existing evidence_ids")
+                else:
+                    averdict = assertion.get("verdict")
+                    if averdict in {"confirmed", "refuted"} and not _cites_source_read(
+                        assertion.get("evidence_ids"), records
+                    ):
+                        errors.append(
+                            f"{aj} is {averdict!r} and must cite a captured source read, not only searches"
+                        )
+                    if (
+                        averdict == "unresolved"
+                        and not _cites_source_read(assertion.get("evidence_ids"), records)
+                        and not _valid_absence_searches(assertion.get("absence_searches"), records)
+                    ):
+                        errors.append(
+                            f"{aj} is 'unresolved' on search evidence alone and must cite two distinct "
+                            f"captured zero-match searches in absence_searches"
+                        )
+                absence = assertion.get("absence_searches")
+                if absence is not None and not _valid_absence_searches(absence, records):
+                    errors.append(
+                        f"{aj} absence_searches must contain two distinct captured zero-match "
+                        f"searches; the same search run twice is not a second check"
+                    )
+        else:
+            rows_complete = False
+
+        # The derivation check applies only once every row is written:
+        # deriving from a subset would flag honest mid-work states.
+        if validity in VALIDITY and rows_complete:
+            assertion_rows = [a for a in assertions if isinstance(a, dict)]
+            derived = _derive_validity(
+                [a.get("type") for a in assertion_rows],
+                [a.get("verdict") for a in assertion_rows],
+            )
+            if derived != "unadjudicated" and validity != derived:
+                errors.append(
+                    f"{at}.validity is {validity!r} but its assertions derive {derived!r} "
+                    f"(assertion verdicts: {[a.get('verdict') for a in assertion_rows]})"
+                )
+
+        if validity in VALIDITY and action in ACTIONS:
+            if validity == "does_not_hold" and action != "no_report":
+                errors.append(f"{at}.action must be 'no_report' when validity is 'does_not_hold'")
+            if validity == "needs_more_evidence" and action != "needs_evidence":
+                errors.append(f"{at}.action must be 'needs_evidence' when validity is 'needs_more_evidence'")
+            if validity == "already_fixed" and action != "already_fixed":
+                errors.append(f"{at}.action must be 'already_fixed' when validity is 'already_fixed'")
+            if validity == "holds" and action not in {"report", "rewrite_then_report", "hardening_note"}:
+                errors.append(
+                    f"{at}.action must be report / rewrite_then_report / hardening_note when validity is 'holds'"
+                )
+
+        acceptance = claim.get("acceptance")
+        if validity in VALIDITY and validity != "holds" and acceptance is not None:
+            errors.append(
+                f"{at} has validity {validity!r} and must not carry an acceptance verdict; "
+                f"a claim that does not hold is not 'unacceptable', it is not a vulnerability"
+            )
+        if validity == "holds" and isinstance(acceptance, dict):
+            errors.extend(_validate_acceptance(at, acceptance, records))
+            if isinstance(obj.get("target"), dict) and obj["target"].get("kind") == "open_source":
+                errors.extend(_validate_oss_verification(at, acceptance.get("oss_verification"), records))
+
+        subject = claim.get("subject")
+        if isinstance(subject, str) and subject.strip() and _subject_is_consequence(subject):
+            errors.append(f"{at}.subject states a consequence, not an invariant: {subject!r}")
+
+        if isinstance(claim.get("submission"), dict):
+            premise_kind = acceptance.get("premise_kind") if isinstance(acceptance, dict) else None
+            errors.extend(_validate_submission(at, claim.get("submission"), premise_kind))
+
+        if claim.get("evidence_ids") is not None and not _valid_evidence_ids(claim.get("evidence_ids"), records):
+            errors.append(f"{at} must cite existing evidence_ids")
+
+    if deliver:
+        _, full_errors = validate(text, records, phase="deliver")
+        seen = set(errors)
+        for err in full_errors:
+            if err not in seen:
+                errors.append(err)
+                seen.add(err)
 
     return (1 if errors else 0), errors
 
@@ -973,6 +1192,25 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate a vulnerability claim adjudication notes file.")
     parser.add_argument("notes", help="path to the adjudication notes Markdown file")
     parser.add_argument("--evidence-ledger", help="path to the evidence JSONL ledger")
+    parser.add_argument(
+        "--phase",
+        choices=PHASES,
+        default="deliver",
+        help=(
+            "which stage's requirements to check: adjudicate (decomposition, assertion "
+            "ledger, derived validity), assess (+ acceptance answers and OSS "
+            "verification), deliver (everything — the delivery gate). Default: deliver."
+        ),
+    )
+    parser.add_argument(
+        "--next",
+        action="store_true",
+        help=(
+            "walk the phases in order and print the single next requirement as "
+            "NEXT [phase]: ... — the one-instruction-per-round driver. Prints READY "
+            "when all three gates are green. Always exits 0."
+        ),
+    )
     args = parser.parse_args(argv)
 
     notes = Path(args.notes)
@@ -998,19 +1236,34 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     text = notes.read_text(encoding="utf-8")
-    code, errors = validate(text, records)
+
+    if args.next:
+        for phase in PHASES:
+            code, errors = validate(text, records, phase=phase)
+            if code != 0:
+                print(f"NEXT [{phase}]: {errors[0]}")
+                if len(errors) > 1:
+                    print(f"  ({len(errors) - 1} more requirement(s) behind this one at the {phase} phase)")
+                return 0
+        print(
+            "READY: adjudicate / assess / deliver gates are all green — produce the "
+            "artifact the verdict calls for, and nothing else"
+        )
+        return 0
+
+    code, errors = validate(text, records, phase=args.phase)
     for err in errors:
         print(f"FAIL: {err}", file=sys.stderr)
     if ledger_errors:
         code = 1
     if code == 0:
         print(
-            f"OK: adjudication structure valid ({len(records)} evidence record(s)); "
+            f"OK: {args.phase}-phase adjudication structure valid ({len(records)} evidence record(s)); "
             f"both verdicts are derived and every claim cites evidence that exists"
         )
     else:
         print(
-            f"FAIL: {len(errors)} adjudication requirement(s) not met; "
+            f"FAIL: {len(errors)} {args.phase}-phase requirement(s) not met; "
             f"no artifact built on this state is ready",
             file=sys.stderr,
         )

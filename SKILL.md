@@ -49,6 +49,38 @@ every round (`templates/adjudication-notes.md`). The runtime validates
 output structure, evidence citations, and skill freshness. None proves
 the verdict is correct.
 
+## The operating loop (mandatory)
+
+Reasoning drifts; commands do not. Every adjudication runs this loop,
+and nothing outside it produces a deliverable:
+
+1. `python runtime/check_skill_loaded.py` — non-zero means the skill
+   files in context are stale; report it and reload before continuing.
+2. Copy `templates/adjudication-notes.md` into the adjudication
+   workspace as `adjudication-{target}.md`, with `evidence.jsonl` and
+   the evidence artifacts beside it. Capture every read and search with
+   `runtime/evidence_log.py`; uncaptured tool output is exploratory.
+3. Each round, run the driver and do **exactly** what it prints — one
+   instruction, then re-run:
+
+   ```text
+   python runtime/validate_adjudication.py <notes> --evidence-ledger <evidence.jsonl> --next
+   ```
+
+   It prints `NEXT [phase]: …` (the single next requirement) or
+   `READY`. It never prints a wall of failures: the gates are phased.
+4. The gates: `--phase adjudicate` owes decomposition, assertion-ledger
+   rows and derived validity verdicts; `--phase assess` adds the three
+   acceptance answers and OSS verification for every holding claim;
+   `--phase deliver` adds submission blocks, work-queue closure and the
+   channel. A phase's gate must be green before the next phase's work
+   counts.
+5. Deliver only on `READY`. The harness enforces this mechanically: a
+   Stop hook (`runtime/stop_gate.py`) re-validates whenever a notes
+   file exists in the project and blocks a turn that ends on an
+   inconsistent state — or on an incomplete one, once delivery is
+   claimed by an artifact or a `report` action.
+
 ## When to load this Skill
 
 Load **after an audit has produced findings** — the audit step has closed
@@ -83,7 +115,9 @@ python runtime/check_skill_loaded.py
 Exit 0 means the SKILL.md / references / templates / schemas in the
 current context match HEAD of this repo. Exit non-zero means the agent
 is reasoning over a stale or partial skill. The script is stdlib-only
-and takes milliseconds.
+and takes milliseconds. When installed as a harness SessionStart hook
+(`runtime/session_start_check.py`), the check runs automatically and a
+mismatch is injected into the conversation as a warning.
 
 The check uses `runtime/skill_manifest.json`. After editing any tracked
 file, run with `--refresh` to recompute hashes.
@@ -589,12 +623,27 @@ preference.
 
 Capture source searches and bounded reads with `runtime/evidence_log.py`
 and cite their IDs. Treat uncaptured tool output as exploratory unless
-the notes preserve a reviewable artifact. Before delivery, run:
+the notes preserve a reviewable artifact. Run the validator every round
+through the driver (`--next`, one instruction at a time), and before
+delivery through the full gate:
 
 ```text
 python runtime/validate_adjudication.py path/to/adjudication-notes.md \
-    --evidence-ledger path/to/evidence.jsonl
+    --evidence-ledger path/to/evidence.jsonl --next
+python runtime/validate_adjudication.py path/to/adjudication-notes.md \
+    --evidence-ledger path/to/evidence.jsonl --phase deliver
 ```
+
+The validator is phase-gated (`--phase adjudicate / assess / deliver`)
+so a mid-work run returns the next owed requirement instead of every
+end-state failure at once. In addition, `runtime/stop_gate.py` runs as
+a harness Stop hook: whenever a notes file exists in the project, a
+turn may not end on a state that contradicts what it records — a
+verdict that does not derive, evidence that does not exist, an
+acceptance or submission block that is present but invalid — and once
+delivery is claimed (an artifact next to the notes, or a `report` /
+`rewrite_then_report` action), the full deliver gate must pass before
+the turn may end.
 
 The validator checks cited IDs and hashes, captured reads for asserted
 claims, two distinct zero-match searches for any `absent` divergence and

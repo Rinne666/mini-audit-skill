@@ -172,5 +172,16 @@ Two channels mean duplicate intake.
    finding, not a report. Every reportable claim gets its submission
    row and the summary closes with the submittable list.
 
-The model can jump between rounds. The file does not enforce a state
-machine. The reviewer enforces it by reading.
+The rounds are phase-gated, not free. Every round, run
+
+```text
+python runtime/validate_adjudication.py <this file> --evidence-ledger <ledger> --next
+```
+
+and do exactly the one `NEXT` instruction it prints, then re-run.
+`--phase adjudicate` must be green before Assess work counts,
+`--phase assess` before Deliver work counts, and `--phase deliver`
+before any artifact ships. The Stop hook re-checks this at every turn
+end: a state that contradicts what it records cannot be stopped on,
+and once delivery is claimed (an artifact written, or an action set to
+`report`) the full deliver gate must pass.

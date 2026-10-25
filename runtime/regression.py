@@ -109,6 +109,15 @@ def main(argv: list[str] | None = None) -> int:
     print("-- test_adjudication_counterexamples")
     print("   OK")
 
+    # The phase gates and the Stop hook gate: the loop the skill actually
+    # runs each round, and the harness-level enforcement behind it.
+    code, out = _run([PY, str(RUNTIME / "test_phase_and_gate.py")])
+    if code != 0:
+        print(f"FAIL: test-phase-and-gate exit {code}: {out}", file=sys.stderr)
+        return 1
+    print("-- test_phase_and_gate")
+    print("   OK")
+
     # The CVSS cross-check is part of the framework's guarantees.
     code, out = _run([PY, str(RUNTIME / "cvss31.py"), "--selftest"])
     if code != 0:

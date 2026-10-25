@@ -2,7 +2,7 @@
   "_comment": "Skill file fingerprint manifest. Used by runtime/check_skill_loaded.py to verify that the version of SKILL.md / references / templates currently in the agent context matches HEAD of the skill repo. Updated by `python runtime/check_skill_loaded.py --refresh`. See SKILL.md session-start rule.",
   "files": {
     "README.md": "7790543b8a47fb5e85fd683621ad1279b18cb71e138272c0c769c54a69e279c2",
-    "SKILL.md": "a7727eeb4f9dba85c049342aad0e879780630334287157803327fb908c1cf8e2",
+    "SKILL.md": "05f6d3d673a9dcbbc5b68d7df660d49d23190bc40690ef1840c9dc0dea57a649",
     "references/acceptance-policy.md": "d00c5cefc6e6226d51977a1aebbb798ed7bf89bdb1072a2d840cca68ffcc3e8f",
     "references/claim-decomposition.md": "3a111ca07948cb4daac112337b44ddf5918b61248d7718aa3ee0619181930f88",
     "references/commit-timeline.md": "d4090e14b0b2951af3433e5ae4fba89bdfcfa0a1e64ff4fa6983e5bcc59da7ad",
@@ -14,11 +14,11 @@
     "references/submission-targets.md": "7feb26e8a8cead6dcbe7bb25f21bbe5325e56ecfe114100e3784e2c8544e6e7f",
     "references/validity-assessment.md": "4381eb4e86e2d9b17d7dcb3d7ade52903ab0fa29a0077b29c87e8243ebe968a5",
     "schemas/adjudication.schema.json": "c201155c6ca9ac03ddc7908f9b0dc014e3578ce7c95426c403f8f96cc27f36af",
-    "templates/adjudication-notes.md": "5bdca57d754fdccd4b129b5f0ffa9e668dd4aeecc8d5fb71ca8bfb7867f42fae",
+    "templates/adjudication-notes.md": "46a2081fe90e856f4aa5369cccd19fed276e7b0a87d654031292934f5e24b584",
     "templates/advisory.md": "eb31662d2dd4a918dd1063d8edfd64ccd766f0b406b3a2f5a08c75cd2c959896",
     "templates/refutation.md": "9775ea94d28da15ccaa9b3ac231881f6b8b23f6a3478ce2ca02c5cbc47fcc647",
     "templates/submission-summary.md": "81570a9451398e1b8a7fc4ead14558e18f55fdb6f61189d3560183da986fbbc9"
   },
-  "generated_at_unix": 1792898143,
+  "generated_at_unix": 1792944557,
   "schema_version": 1
 }
