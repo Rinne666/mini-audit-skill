@@ -86,6 +86,8 @@ SUBMISSION_TARGETS = {
 }
 TARGET_FITS = {"primary", "secondary", "unsuitable"}
 AWARENESS_STATES = {"aware", "false", "unknown"}
+SEVERITIES = {"critical", "high", "medium", "low"}
+SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 FILE_LINE = re.compile(r"^.+:[0-9]+(-[0-9]+)?$")
 
 # A subject stated as a consequence rather than an invariant.
@@ -520,8 +522,16 @@ def _validate_submission(at: str, submission: object, premise_kind: object) -> l
     two primary targets mean duplicate intake.
     """
     if not isinstance(submission, dict):
-        return [f"{at}.submission is required for a reportable claim (core / aware / config / boundary / targets)"]
+        return [f"{at}.submission is required for a reportable claim (severity / core / aware / config / boundary / targets)"]
     errors: list[str] = []
+
+    severity = submission.get("severity")
+    if severity not in SEVERITIES:
+        errors.append(
+            f"{at}.submission.severity must be one of {sorted(SEVERITIES)}, "
+            f"got {severity!r} — the summary table is sorted by it, so every "
+            f"reportable claim must carry one"
+        )
 
     core = submission.get("core_business")
     if not isinstance(core, dict) or not isinstance(core.get("in_core"), bool):

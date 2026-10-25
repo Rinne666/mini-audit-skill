@@ -70,6 +70,33 @@ machine and cannot prove a maintainer will accept a report.
 - `runtime/cvss31.py` — a second implementation of the CVSS v3.1 base score,
   used to cross-check a stated score against its vector.
 
+## One-click install (npm)
+
+The package ships a zero-dependency CLI that installs the skill into the
+agent skill directories and writes the `/adjudicate` trigger command:
+
+```text
+# after publishing to npm:
+npx mini-adjudication@latest install
+
+# from a built tarball:
+npm pack && npx ./mini-adjudication-<version>.tgz install
+
+# from a checkout of this repo:
+node bin/cli.js install
+```
+
+Scopes: `--user` (default: `~/.agents/skills/` + `~/.zcode/commands/`),
+`--zcode` (`~/.zcode/skills/`), `--claude` (`~/.claude/skills/` +
+`~/.claude/commands/`), `--all`; `--link` links a checkout instead of
+copying (never from an npm cache). `uninstall` removes exactly what was
+installed; `doctor` verifies every install — manifest hashes, the fixture
+regression, and the trigger command — in one pass.
+
+The installer itself is stdlib-only Node >= 18. The installed skill needs
+Python 3 on PATH for its validator and evidence ledger (stdlib-only too);
+`doctor` reports python availability.
+
 ## How to use it
 
 1. Run the audit first (`security-audit` or equivalent). This skill's
@@ -142,10 +169,11 @@ core business, developer awareness (`aware` / `false` / `unknown`,
 with evidence), trigger configuration (cross-checked mechanically
 against the premise: `special_config_required: true` cannot coexist
 with an `attacker_only` premise), and the boundary crossed — plus a
-target list with exactly one `primary` among `vendor_advisory`,
-`cve_cna`, `cnvd`, `src_platform`, `bounty_platform`,
-`hardening_channel`. The distilled acceptance rules behind that list
-live in `references/submission-targets.md`.
+severity rating and a target list with exactly one `primary` among
+`vendor_advisory`, `cve_cna`, `cnvd`, `src_platform`,
+`bounty_platform`, `hardening_channel`. The final summary table sorts
+its rows by that severity, descending. The distilled acceptance rules
+behind the target list live in `references/submission-targets.md`.
 
 ## The verdicts are derived, not asserted
 
@@ -186,7 +214,7 @@ would assert a harm you cannot show).
   completed `final_review` task challenged the negative verdicts.
 
 `runtime/test_adjudication_counterexamples.py` takes the correct fixture,
-breaks it fourteen ways, and asserts each broken version is rejected. A
+breaks it fifteen ways, and asserts each broken version is rejected. A
 validator that only ever sees valid input proves nothing.
 
 ## What this Skill is not

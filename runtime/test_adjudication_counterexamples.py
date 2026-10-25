@@ -22,6 +22,7 @@ practice:
   * a divergence claimed absent without reproducible absence behind it,
   * a reportable claim with no submission block (no core / awareness /
     config / boundary / target answers),
+  * a submission without a severity — the summary table is sorted by it,
   * a submission that says special configuration is required while the
     premise says the attacker creates the condition alone,
   * a submission with no primary target — nothing would be submitted,
@@ -287,6 +288,15 @@ with tempfile.TemporaryDirectory() as raw_tmp:
     expect_rejected(
         "an open-source holding claim must verify policy, timeline, history, preference",
         rebuild(base_text, obj), ledger_path, "oss_verification",
+    )
+
+    # 15. A submission with no severity — the summary table is sorted by it.
+    ledger_path = stage(tmp)
+    obj = extract(base_text)
+    claim(obj, "C1")["submission"].pop("severity", None)
+    expect_rejected(
+        "a submission without a severity rating is rejected",
+        rebuild(base_text, obj), ledger_path, "submission.severity",
     )
 
 if failures:

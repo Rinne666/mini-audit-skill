@@ -124,9 +124,13 @@ project's own record.
 
 ## Submission Summary
 
-| Claim | Core business | Developer aware | Special config | Boundary crossed | Primary target | Secondary / unsuitable |
-|---|---|---|---|---|---|---|
-| 1 | yes — SECURITY.md scope names the authentication paths and the extension's answer shapes | false — no comment, TODO, or partial guard on the login path (E000001); the sibling paths guard the same answer without marking this one known-risk | not required — an extension answering empty is documented normal operation (app.php:77-83), not a weakened configuration | from an unauthenticated network client holding only a username, to rewriting the stored credential of any named account and authenticating as it | `vendor_advisory` — the policy names the private advisory flow and every published advisory used it | `cve_cna` secondary — via the maintainer's published advisory · `cnvd` unsuitable — not a distributed product with internet instances · `src_platform` unsuitable — not a vendor asset |
+Sorted by severity, descending. The Order column keeps the delivery
+position (reception likelihood, per the ordering reference) — the table
+ranks by harm, the sends still go by reception.
+
+| Order | Claim | Severity | Core business | Developer aware | Special config | Boundary crossed | Primary target | Secondary / unsuitable |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | `high` — any named account's stored credential can be rewritten and then authenticated as, by an anonymous client | yes — SECURITY.md scope names the authentication paths and the extension's answer shapes | false — no comment, TODO, or partial guard on the login path (E000001); the sibling paths guard the same answer without marking this one known-risk | not required — an extension answering empty is documented normal operation (app.php:77-83), not a weakened configuration | from an unauthenticated network client holding only a username, to rewriting the stored credential of any named account and authenticating as it | `vendor_advisory` — the policy names the private advisory flow and every published advisory used it | `cve_cna` secondary — via the maintainer's published advisory · `cnvd` unsuitable — not a distributed product with internet instances · `src_platform` unsuitable — not a vendor asset |
 
 ## Work Queue
 
@@ -269,6 +273,7 @@ precondition rather than a certainty.
       "action": "report",
       "artifact": "expected/advisory.md",
       "submission": {
+        "severity": "high",
         "core_business": {
           "in_core": true,
           "evidence": "SECURITY.md scope names the authentication paths, including the external authentication extension's answer shapes; the login path is the service's advertised entry"

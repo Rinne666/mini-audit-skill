@@ -12,12 +12,15 @@ adjudicated at `{commit / tag}`.
 
 ## Submittable
 
-One row per reportable claim, in delivery order (reception likelihood,
-not severity). Every cell cites or points at the adjudication.
+One row per reportable claim, **sorted by severity, descending**
+(`critical` → `high` → `medium` → `low`; ties: core business first,
+then cleanest premise). The Order column keeps the delivery position —
+the table ranks by harm, the sends still go by reception likelihood.
+Every cell cites or points at the adjudication.
 
-| Order | Claim | Subject (invariant) | Core business | Developer aware | Special config | Boundary crossed | Primary target | Secondary / unsuitable |
-|---|---|---|---|---|---|---|---|---|
-| 1 | C1 | | yes/no — evidence | aware/false/unknown — evidence | required? — default | from → to | `target` — reason | `target` — reason · `target` — reason |
+| Order | Claim | Severity | Subject (invariant) | Core business | Developer aware | Special config | Boundary crossed | Primary target | Secondary / unsuitable |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | C1 | `critical/high/medium/low` — one-line justification | | yes/no — evidence | aware/false/unknown — evidence | required? — default | from → to | `target` — reason | `target` — reason · `target` — reason |
 
 ## Hardening offers
 

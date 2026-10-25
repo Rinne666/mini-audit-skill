@@ -93,15 +93,23 @@ careful submitter asks.
 ## 6. Assembling the summary
 
 The final artifact (`templates/submission-summary.md`) is one table,
-one row per submittable claim:
+one row per submittable claim — **sorted by severity, descending**
+(`critical` → `high` → `medium` → `low`; ties broken by core business
+first, then by premise cleanliness). The `Order` column still records
+the delivery position from `references/ordering-and-channels.md` —
+**the table ranks by harm, the sends still go by reception likelihood.**
+Those two orders are different on purpose: the submitter scans the
+table top-down for "how bad is what I have", but sends the cleanest
+premise first.
 
-| Claim | Core | Aware | Special config | Boundary crossed | Primary target | Order |
+| Order | Claim | Severity | Core business | Developer aware | Special config | Boundary crossed | Primary target | … |
 
 - Rows are **only** claims whose action is `report` or
   `rewrite_then_report`. `hardening_note` claims are listed separately
   as patches to offer; negative verdicts do not appear at all.
-- Row order follows `references/ordering-and-channels.md` — reception
-  likelihood, not severity.
+- Every row's Severity comes from the claim's `submission.severity`
+  (the validator requires it — the table cannot be sorted without it),
+  and it must agree with the CVSS rating stated in the advisory draft.
 - Under the table: the blocking facts. Any `needs_more_evidence` claim
   with its missing fact; any `aware` finding with its re-framing; any
   timeline `untraced` field with what a trace would change.

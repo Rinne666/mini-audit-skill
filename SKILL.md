@@ -368,9 +368,15 @@ on.
 
 **The submission summary** (`templates/submission-summary.md`) closes
 every adjudication that has anything reportable — the 可申报总结. One
-row per `report` / `rewrite_then_report` claim, answering what a
-triager asks in the first ninety seconds, each with cited evidence:
+row per `report` / `rewrite_then_report` claim, **sorted by severity,
+descending** (`critical` → `high` → `medium` → `low`; the `Order`
+column keeps the delivery position — the table ranks by harm, the
+sends still go by reception likelihood). Each row answers what a
+triager asks in the first ninety seconds, with cited evidence:
 
+- **Severity** — the claim's harm rating; the row's sort key, required
+  by the validator, and it must agree with the CVSS rating in the
+  advisory draft.
 - **Core business** — is the defect in the product's advertised main
   line, or in a peripheral path?
 - **Developer awareness** — did the developers notice and comment
@@ -508,9 +514,9 @@ Do not stop because the claim queue is empty. Before delivering:
   way to observe it.
 - Every `already_fixed` cites the fix.
 - Every `holds` claim has a subject stated as an invariant.
-- Every reportable claim carries its submission block: core business,
-  developer awareness, trigger configuration (consistent with the
-  premise), boundary crossed, and a target list with exactly one
+- Every reportable claim carries its submission block: severity, core
+  business, developer awareness, trigger configuration (consistent with
+  the premise), boundary crossed, and a target list with exactly one
   primary.
 - Every absence claim cites two distinct zero-match searches, and every
   one of them still reproduces.
@@ -570,15 +576,16 @@ The acceptability verdict must follow from the three answers:
 Every claim that is `accept` or `accept_after_rewrite` must cite a
 captured source read, its subject must be phrased as an invariant
 rather than a consequence, and it must carry a `submission` block:
-core business, developer awareness, trigger configuration, boundary
-crossed, and a target list with exactly one primary — a
-`special_config_required` of true next to an `attacker_only` premise
-is rejected, because the two answers describe the same fact and one
-of them is wrong. When the target is open source, every holding claim
-must additionally carry its `oss_verification` block: the policy
-check, the commit timeline (every field a cited fact or an explicit
-`untraced — reason`), the similar issues with their classification,
-and the maintainer's demonstrated preference.
+severity (the summary table's sort key), core business, developer
+awareness, trigger configuration, boundary crossed, and a target list
+with exactly one primary — a `special_config_required` of true next to
+an `attacker_only` premise is rejected, because the two answers
+describe the same fact and one of them is wrong. When the target is
+open source, every holding claim must additionally carry its
+`oss_verification` block: the policy check, the commit timeline (every
+field a cited fact or an explicit `untraced — reason`), the similar
+issues with their classification, and the maintainer's demonstrated
+preference.
 
 Capture source searches and bounded reads with `runtime/evidence_log.py`
 and cite their IDs. Treat uncaptured tool output as exploratory unless
@@ -595,11 +602,11 @@ for any unresolved assertion that rests on search evidence alone, the
 reproduction of every recorded zero-match search, the mechanical
 validity and acceptability derivations, the invariant subject, the
 target profile, the oss_verification block on open-source holding
-claims, the submission block on reportable claims (including the
-trigger-configuration/premise consistency and the exactly-one-primary
-rule), all eight coverage sections, and work-queue closure. Exit 0
-means the structure is sound; it does not certify that the verdict is
-correct. The reviewer still challenges every verdict.
+claims, the submission block on reportable claims (severity present,
+the trigger-configuration/premise consistency, and the
+exactly-one-primary rule), all eight coverage sections, and work-queue
+closure. Exit 0 means the structure is sound; it does not certify that
+the verdict is correct. The reviewer still challenges every verdict.
 
 For end-to-end verification across sessions, `runtime/regression.py`
 runs the derivation tests, the counter-example tests,
@@ -608,13 +615,14 @@ validate-adjudication and check-skill-loaded against every fixture in
 has drifted.
 
 `runtime/test_adjudication_counterexamples.py` is the half that matters
-most: it takes the correct fixture, breaks it fourteen ways — an absence that
+most: it takes the correct fixture, breaks it fifteen ways — an absence that
 does not reproduce, a verdict asserted instead of derived, a
 non-vulnerability dressed up as an unacceptable one, a subject written as
 a consequence, the same search counted twice, a reportable claim with no
-submission block, a special-configuration answer contradicting its
-attacker-only premise, a submission with no primary target, an
-open-source claim with no verification block — and asserts that each
+submission block, a submission with no severity to sort the table by, a
+special-configuration answer contradicting its attacker-only premise, a
+submission with no primary target, an open-source claim with no
+verification block — and asserts that each
 broken version is rejected. A validator that only ever sees valid input
 proves nothing.
 

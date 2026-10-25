@@ -212,8 +212,12 @@
           "submission": {
             "type": "object",
             "description": "Required when action is report or rewrite_then_report: the submission summary dimensions and the target list (references/submission-summary.md).",
-            "required": ["core_business", "developer_awareness", "trigger_configuration", "boundary_crossed", "targets"],
+            "required": ["severity", "core_business", "developer_awareness", "trigger_configuration", "boundary_crossed", "targets"],
             "properties": {
+              "severity": {
+                "enum": ["critical", "high", "medium", "low"],
+                "description": "The claim's harm rating. The submission summary table is sorted by it, descending — so every reportable claim must carry one."
+              },
               "core_business": {
                 "type": "object",
                 "required": ["in_core", "evidence"],

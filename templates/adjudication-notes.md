@@ -100,12 +100,13 @@ refutation) / `needs_evidence` (name the missing fact) / `already_fixed`
 ## Submission Summary
 
 The 可申报总结, distilled from `references/submission-summary.md`. One
-row per reportable claim; the full artifact is
+row per reportable claim, **sorted by severity descending**; the Order
+column keeps the delivery position. The full artifact is
 `templates/submission-summary.md`.
 
-| Claim | Core business | Developer aware | Special config | Boundary crossed | Primary target | Secondary / unsuitable |
-|---|---|---|---|---|---|---|
-| 1 | yes/no — evidence | aware/false/unknown — evidence | required? — default cited | from → to | one target — reason | others — reasons |
+| Order | Claim | Severity | Core business | Developer aware | Special config | Boundary crossed | Primary target | Secondary / unsuitable |
+|---|---|---|---|---|---|---|---|---|
+| 1 | | `critical/high/medium/low` | yes/no — evidence | aware/false/unknown — evidence | required? — default cited | from → to | one target — reason | others — reasons |
 
 Exactly one primary target per claim. Two primaries mean duplicate
 intake. A `special_config_required: true` claim cannot carry an
