@@ -9,6 +9,8 @@ Thumbs.db
 /dist/
 *.log
 /.tmp/
+node_modules/
+*.tgz
 
 # Python bytecode
 __pycache__/

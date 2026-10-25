@@ -1,0 +1,45 @@
+{
+  "name": "mini-adjudication",
+  "version": "5.2.0",
+  "description": "Post-audit vulnerability acceptance standard: judge whether audited findings hold and where they would be accepted (maintainer advisory, CVE/CNA, CNVD, SRC, bounty platforms), then produce the submission summary. Installs as an agent skill with a /adjudicate trigger command.",
+  "bin": {
+    "mini-adjudication": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "cli",
+    "SKILL.md",
+    "README.md",
+    "references",
+    "templates",
+    "schemas",
+    "runtime",
+    "fixtures",
+    "_meta.json"
+  ],
+  "keywords": [
+    "security",
+    "audit",
+    "vulnerability",
+    "triage",
+    "adjudication",
+    "cvss",
+    "cve",
+    "cnvd",
+    "src",
+    "agent-skill",
+    "zcode",
+    "claude"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rinne666/mini-audit-skill.git"
+  },
+  "scripts": {
+    "test": "python runtime/regression.py",
+    "doctor": "node bin/cli.js doctor"
+  }
+}
